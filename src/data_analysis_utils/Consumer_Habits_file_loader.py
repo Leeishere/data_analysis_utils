@@ -1,16 +1,23 @@
 
-from .BinnerClass import Bin
-import pathlib
+from importlib import resources
+
 import pandas as pd
+
+from .BinnerClass import Bin
+
 bin=Bin()
 
 
-def load_consumer_habits(filepath:str="data/shopping_behavior_updated.csv"):
+def consumer_habits_csv_path():
+    return resources.files("data_analysis_utils.data").joinpath("shopping_behavior_updated.csv")
+
+
+def load_consumer_habits(filepath=None):
     """
     """
     global bin
 
-    behavior=pathlib.Path(filepath)
+    behavior = consumer_habits_csv_path() if filepath is None else filepath
     df=pd.read_csv(behavior)
     df['Male']=df['Gender'].replace({'Male':1,'Female':0}).astype('object')
     df.drop(columns=['Customer ID','Gender'],inplace=True)
