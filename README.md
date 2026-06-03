@@ -23,4 +23,4 @@ From this repository:
 python3 -m pip install -r requirements.txt
 ```
 
-The Streamlit app lives in `apps/data_analyzer_app.py`, feedback is stored in `data_analyzer_app_feedback.txt`, and analyzer notebooks live in `examples/`.
+The Streamlit app lives in `apps/APP_DataAnalyzer.py`, feedback is stored in `data_analyzer_app_feedback.txt`, and analyzer notebooks live in `examples/`.
