@@ -14,11 +14,7 @@ setup(
         "pandas",
         "scipy",
         "seaborn",
-        "scikit-learn",
-        "hdbscan",
-        "streamlit",
     ],
-    package_data={"data_analysis_utils": ["data/*.csv"]},
     extras_require={
         "app": ["streamlit"],
         "dev": ["ipykernel", "jupyter"],

@@ -15,9 +15,6 @@ dependencies = [
     "pandas",
     "scipy",
     "seaborn",
-    "scikit-learn",
-    "hdbscan",
-    "streamlit",
 ]
 
 [project.optional-dependencies]
@@ -31,6 +28,3 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools.package-data]
-data_analysis_utils = ["data/*.csv"]
