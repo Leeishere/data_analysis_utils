@@ -1,8 +1,13 @@
 import numpy as np
 import pandas as pd
+import pathlib
 import streamlit as st
 
 from data_analysis_utils import AnalyzeDataset
+from data_analysis_utils.Consumer_Habits_file_loader import load_consumer_habits
+
+DEFAULT_DATASET_PATH = pathlib.Path(__file__).resolve().parents[1] / "data" / "shopping_behavior_updated.csv"
+DEFAULT_DATASET_NAME = "shopping_behavior_updated.csv"
 
 # ======================|
 # MODEL PARAMETERS      |
@@ -261,13 +266,15 @@ if st.session_state.page == "Data Upload & Processing":
 # ======================================================================================================================================
 # ======================================================================================================================================
 
+    use_default_dataset = st.checkbox("Use default Consumer Habits dataset", value=False)
     uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"], help="File size limit: 10MB")
+    data_source_key = f"default:{DEFAULT_DATASET_NAME}" if use_default_dataset else uploaded_file.name if uploaded_file is not None else None
 
 # ======================================================================================================================================
 # ======================================================================================================================================
 # ======================================================================================================================================
 
-    if uploaded_file is not None:
+    if data_source_key is not None:
 
         #   multipliers to help name a dtype
         st.session_state.min_pct_non_null_to_propose_a_dtype                        = 0.99
@@ -279,8 +286,8 @@ if st.session_state.page == "Data Upload & Processing":
 
 
         # Check file size (10MB limit for fly.io)
-        file_size = len(uploaded_file.getvalue())
-        if file_size > 10 * 1024 * 1024:
+        file_size = 0 if use_default_dataset else len(uploaded_file.getvalue())
+        if not use_default_dataset and file_size > 10 * 1024 * 1024:
             st.error("File size exceeds 10MB limit. Please upload a smaller file.")
         else:
 
@@ -298,7 +305,7 @@ if st.session_state.page == "Data Upload & Processing":
 
                 # Read CSV to DataFrame
                 # Only re-read CSV when a new file is uploaded; preserve session state data across reruns
-                if st.session_state.uploaded_file_name != uploaded_file.name:
+                if st.session_state.uploaded_file_name != data_source_key:
 
                     # reset dynamic ploting variables
                     st.session_state.valid_group_param_indexes = None
@@ -309,8 +316,11 @@ if st.session_state.page == "Data Upload & Processing":
 
 
 
-                    st.session_state.uploaded_file_name = uploaded_file.name
-                    st.session_state.data = pd.read_csv(uploaded_file)   
+                    st.session_state.uploaded_file_name = data_source_key
+                    if use_default_dataset:
+                        st.session_state.data = load_consumer_habits(DEFAULT_DATASET_PATH)
+                    else:
+                        st.session_state.data = pd.read_csv(uploaded_file)
                     if len(st.session_state.data.shape)<2:
                         st.session_state.data = st.session_state.data.to_frame()
                     # capture original len and shape
@@ -746,7 +756,7 @@ if st.session_state.page == "Data Upload & Processing":
             except Exception as e:
                 st.error(f"Error processing file: {str(e)}")
     else:
-        st.info("Please upload a CSV file to begin analysis.")
+        st.info("Upload a CSV file or select the default Consumer Habits dataset to begin analysis.")
 
     if st.session_state.step==6:
         fit = st.button("Fit the Data")
