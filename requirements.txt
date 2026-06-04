@@ -1,7 +1,11 @@
 -e .
+joblib
+hdbscan
 matplotlib
 numpy
 pandas
 plotly
+scipy
+scikit-learn
 seaborn
 streamlit

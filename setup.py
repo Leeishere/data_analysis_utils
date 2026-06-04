@@ -9,10 +9,12 @@ setup(
     python_requires=">=3.10",
     install_requires=[
         "joblib",
+        "hdbscan",
         "matplotlib",
         "numpy",
         "pandas",
         "scipy",
+        "scikit-learn",
         "seaborn",
     ],
     extras_require={
