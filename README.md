@@ -1,26 +1,19 @@
 # data_analysis_utils
 
-Reusable Python package for `AnalyzeDataset`, the Data Analyzer Streamlit app, and analyzer quickstart notebooks.
+`data_analysis_utils` is a Python module for exploring relationships in tabular datasets. It supports hypothesis tests, correlation tests, unsupervised learning, and probabilistic modeling workflows.
 
-## Install From Public GitHub
+The main focus of this repository is the Data Analyzer Streamlit app, which wraps those tools in an interactive interface for uploading data, preprocessing it, fitting analyses, visualizing relationships, and using the binning tool.
+
+## Launch The App
+
+[Open the Data Analyzer app](https://leeishere-consumer-habits-app-dataanalyzer-urlv3r.streamlit.app/)
+
+## Install The Module
 
 ```bash
 pip install "data-analysis-utils @ git+https://github.com/Leeishere/data_analysis_utils.git@main"
 ```
 
-Then import it from any project in the same Python environment:
-
 ```python
 from data_analysis_utils import AnalyzeDataset
-from data_analysis_utils.Consumer_Habits_file_loader import load_consumer_habits
 ```
-
-## Local Development
-
-From this repository:
-
-```bash
-python3 -m pip install -r requirements.txt
-```
-
-The Streamlit app lives in `apps/APP_DataAnalyzer.py`, feedback is stored in `data_analyzer_app_feedback.txt`, and analyzer notebooks live in `examples/`.
