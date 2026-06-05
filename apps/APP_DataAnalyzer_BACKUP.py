@@ -6,13 +6,9 @@ import plotly.express as px
 import datetime
 
 from data_analysis_utils import AnalyzeDataset
-from data_analysis_utils.BinnerClass import Bin
-from data_analysis_utils.CompareColumns import CompareColumns
-from data_analysis_utils.MuEstimator import MuEstimator
 
 
 DEFAULT_DATASET_PATH = pathlib.Path(__file__).resolve().parents[1] / "data" / "shopping_behavior_updated.csv"
-NAVIGATION_PAGES = ["Data Upload & Processing", "Group Visualizations", "Target Visualizations", "Feedback", "Binning Tool"]
 
 
 def chunk_plotables_mutate_titles(
@@ -230,36 +226,6 @@ if 'use_default_dataset' not in st.session_state:
 if 'default_filepath' not in st.session_state:
     st.session_state.default_filepath = DEFAULT_DATASET_PATH
 
-if 'unbinned_columns' not in st.session_state:
-    st.session_state.unbinned_columns = None
-
-if 'binned_columns' not in st.session_state:
-    st.session_state.binned_columns = []
-
-if 'binned_exists_as' not in st.session_state:
-    st.session_state.binned_exists_as = None
-
-if 'curr_original_unbinned' not in st.session_state:
-    st.session_state.curr_original_unbinned = 'Review Rating'
-
-if "numnum_metrics" not in st.session_state:
-    st.session_state.numnum_metrics = ['pearson', 0.6, True]
-
-if "catnum_metrics" not in st.session_state:
-    st.session_state.catnum_metrics = ['kruskal', 0.05, False]
-
-if "abs_min_bins" not in st.session_state:
-    st.session_state.abs_min_bins = None
-
-if "col_by_col_min_bins" not in st.session_state:
-    st.session_state.col_by_col_min_bins = None
-
-if "custom_min_bins" not in st.session_state:
-    st.session_state.custom_min_bins = {}
-
-if "binning_processed" not in st.session_state:
-    st.session_state.binning_processed = False
-
 # PLOT PARAMS
 # =======================================================================================================================================
 # =======================================================================================================================================
@@ -456,309 +422,6 @@ def return_catcat_plottype(x, y):
     return px.histogram, params
 
 
-def reset_binning_state():
-    st.session_state.unbinned_columns = None
-    st.session_state.binned_columns = []
-    st.session_state.binned_exists_as = None
-    st.session_state.curr_original_unbinned = 'Review Rating'
-    st.session_state.abs_min_bins = None
-    st.session_state.col_by_col_min_bins = None
-    st.session_state.custom_min_bins = {}
-    st.session_state.binning_processed = False
-
-
-@st.cache_data(show_spinner=False)
-def cached_min_bins(dataframe, numnum_metrics, catnum_metrics, numeric_columns_key=None):
-    cached_bin = Bin()
-    numeric_columns = list(numeric_columns_key) if numeric_columns_key is not None else None
-    min_bin_dict = cached_bin.relational_binner(
-        dataframe,
-        numnum_meth_alpha_above=tuple(numnum_metrics),
-        numcat_meth_alpha_above=tuple(catnum_metrics),
-        original_value_count_threashold=5,
-        numeric_columns=numeric_columns,
-        categoric_columns=None,
-        numeric_target=None,
-        categoric_target=None,
-    )
-    return min_bin_dict, cached_bin.numeric_feature_col_thresholds
-
-
-def get_dict_for_min_bins(numeric_columns=None):
-    numeric_columns_key = tuple(numeric_columns) if numeric_columns is not None else None
-    return cached_min_bins(
-        st.session_state.data,
-        tuple(st.session_state.numnum_metrics),
-        tuple(st.session_state.catnum_metrics),
-        numeric_columns_key,
-    )
-
-
-def update_data_with_binned_columns(data_, bin_dict):
-    bin_model = Bin()
-    data = data_.copy()
-    binned_list = []
-    for k, v in bin_dict.items():
-        header = f"{k} -> Binned"
-        data[header] = bin_model.binner(data[k], v, rescale=True, return_bins=False)
-        data[header] = round(data[header], 3).astype(float)
-        binned_list.append(header)
-    return data, binned_list
-
-
-def ensure_default_binning():
-    has_custom_bins = isinstance(st.session_state.custom_min_bins, dict) and len(st.session_state.custom_min_bins) > 0
-    needs_binning = (not has_custom_bins) or any(
-        f"{col} -> Binned" not in st.session_state.data.columns
-        for col in st.session_state.custom_min_bins.keys()
-    )
-    if needs_binning:
-        with st.spinner("Preparing default binning for analysis views..."):
-            st.session_state.abs_min_bins, st.session_state.col_by_col_min_bins = get_dict_for_min_bins()
-            st.session_state.custom_min_bins = st.session_state.abs_min_bins.copy()
-            data = st.session_state.data.copy()
-            st.session_state.data, st.session_state.binned_columns = update_data_with_binned_columns(
-                data,
-                st.session_state.custom_min_bins,
-            )
-            st.session_state.unbinned_columns = list(st.session_state.custom_min_bins.keys())
-            st.session_state.binning_processed = True
-            if st.session_state.unbinned_columns and (
-                st.session_state.curr_original_unbinned not in st.session_state.unbinned_columns
-            ):
-                st.session_state.curr_original_unbinned = st.session_state.unbinned_columns[0]
-
-    if st.session_state.unbinned_columns and st.session_state.curr_original_unbinned is not None:
-        st.session_state.binned_exists_as = f"{st.session_state.curr_original_unbinned} -> Binned"
-
-
-def render_navigation(label="Navigation"):
-    with st.sidebar:
-        st.header("Navigation")
-        st.session_state.page = st.radio(
-            label,
-            NAVIGATION_PAGES,
-            index=NAVIGATION_PAGES.index(st.session_state.page),
-            key='navigation_control',
-            on_change=set_page,
-        )
-
-
-def render_binning_tool():
-    render_navigation("Navigation")
-
-    if st.session_state.data is None or st.session_state.step < 6:
-        st.info("Please complete Data Upload & Processing before using the Binning Tool.")
-        return
-
-    st.title("Bin Variables Based on Hypothesis Tests and/or Correlation Coefficients.", text_alignment='center')
-
-    st.markdown('...', text_alignment='center')
-    st.markdown("Minimum Bin Sizes that Retain Statistical Relationships", text_alignment='center')
-    st.markdown('...', text_alignment='center')
-
-    coco = CompareColumns()
-    ensure_default_binning()
-
-    examin_bins = st.columns([1], gap='large', vertical_alignment='top', border=True)
-    pre_binned_lineplot_cell, pre_bin_relationships = st.columns([.45, .55], gap='large', vertical_alignment='top', border=True)
-    post_binned_countplot_cell, post_binned_relationships = st.columns([.45, .55], gap='large', vertical_alignment='top', border=True)
-    binned_mu_plot = st.columns([1], gap='large', vertical_alignment='top', border=True)
-
-    examin_bins = examin_bins[0]
-    with examin_bins:
-        if st.session_state.unbinned_columns:
-            st.subheader("Column Selection", divider='grey', anchor=False, text_alignment='center')
-            st.markdown("Select the Binned Variable You Want to Examine.")
-            try:
-                unbinned_default_start_index = st.session_state.unbinned_columns.index(st.session_state.curr_original_unbinned)
-            except:
-                unbinned_default_start_index = 0
-            finally:
-                unbinned = st.selectbox(
-                    "",
-                    st.session_state.unbinned_columns,
-                    index=unbinned_default_start_index,
-                    key="selected_unbinned",
-                    help=None,
-                    on_change=None,
-                    args=None,
-                    kwargs=None,
-                    placeholder=None,
-                    disabled=False,
-                    label_visibility="visible",
-                    accept_new_options=False,
-                    width="stretch",
-                )
-                st.session_state.binned_exists_as = f"{unbinned} -> Binned"
-                st.session_state.curr_original_unbinned = unbinned
-
-    with pre_binned_lineplot_cell:
-        if st.session_state.binned_exists_as is not None:
-            st.subheader('Pre Bin Plot', divider='grey', anchor=False, text_alignment='center')
-            st.markdown("Line Plot")
-            unbinned_lineplot_data = st.session_state.data[st.session_state.curr_original_unbinned].copy().to_frame().reset_index(drop=True).reset_index(drop=False)
-            st.line_chart(
-                data=unbinned_lineplot_data,
-                x=unbinned_lineplot_data.columns[0],
-                y=unbinned_lineplot_data.columns[1],
-                x_label=None,
-                y_label=st.session_state.curr_original_unbinned,
-                color=None,
-                width="stretch",
-                height="content",
-                use_container_width=None,
-            )
-
-    with pre_bin_relationships:
-        if st.session_state.binned_exists_as is not None:
-            st.subheader('Pre Bin Relationships', divider='grey', anchor=False, text_alignment='center')
-            st.markdown("Metrics Before Binning")
-            pre_combined = coco.column_comparison(
-                st.session_state.data,
-                numnum_meth_alpha_above=st.session_state.numnum_metrics,
-                numcat_meth_alpha_above=st.session_state.catnum_metrics,
-                catcat_meth_alpha_above=None,
-                numeric_columns=None,
-                categoric_columns=None,
-                numeric_target=st.session_state.curr_original_unbinned,
-                categoric_target=None,
-            )
-            pre_combined = pre_combined.loc[
-                (
-                    (pre_combined['column_a'] == st.session_state.curr_original_unbinned)
-                    | (pre_combined['column_b'] == st.session_state.curr_original_unbinned)
-                )
-                & (pre_combined['column_a'] != pre_combined['column_b'])
-                & ~(
-                    (pre_combined['column_a'] + " -> Binned" == pre_combined['column_b'])
-                    | (pre_combined['column_a'] == pre_combined['column_b'] + " -> Binned")
-                )
-            ].round(3)
-            pre_target_on_right = pre_combined['column_b'] == st.session_state.curr_original_unbinned
-            pre_combined.loc[pre_target_on_right, ['column_a', 'column_b']] = (
-                pre_combined.loc[pre_target_on_right, ['column_b', 'column_a']].to_numpy()
-            )
-            pre_combined = pre_combined.sort_values(by=['column_b'], ascending=[True]).drop_duplicates(subset=['column_a', 'column_b'], keep='first').reset_index(drop=True)
-            st.dataframe(
-                data=pre_combined[[col for col in pre_combined if col in ['column_b', 'P-value', 'Coefficient']]],
-                width="stretch",
-                height="auto",
-                use_container_width=None,
-                hide_index=None,
-                column_order=None,
-                column_config=None,
-                key=None,
-                on_select="ignore",
-                selection_mode="multi-row",
-                row_height=None,
-                placeholder=None,
-            )
-
-    with post_binned_countplot_cell:
-        if st.session_state.binned_exists_as is not None:
-            st.subheader('Post Bin Plot', divider='grey', anchor=False, text_alignment='center')
-            st.markdown("Count Plot")
-            binned_countplot_data = (
-                st.session_state.data[st.session_state.binned_exists_as]
-                .to_frame()
-                .groupby(st.session_state.binned_exists_as, as_index=False, observed=True)
-                .size()
-                .sort_values(by='size', ascending=False)
-                .reset_index(drop=True)
-            )
-            st.bar_chart(
-                data=binned_countplot_data,
-                x=binned_countplot_data.columns[0],
-                y=binned_countplot_data.columns[1],
-                x_label=binned_countplot_data.columns[0],
-                y_label="Counts",
-                color=None,
-                horizontal=False,
-                sort=True,
-                stack=None,
-                width="stretch",
-                height="content",
-                use_container_width=None,
-            )
-
-    with post_binned_relationships:
-        if st.session_state.binned_exists_as is not None:
-            st.subheader('Post Bin Relationships', divider='grey', anchor=False, text_alignment='center')
-            st.markdown("Statistically Significant Relationships After Binning")
-            post_combined = coco.column_comparison(
-                st.session_state.data,
-                numnum_meth_alpha_above=st.session_state.numnum_metrics,
-                numcat_meth_alpha_above=st.session_state.catnum_metrics,
-                catcat_meth_alpha_above=None,
-                numeric_columns=None,
-                categoric_columns=None,
-                numeric_target=st.session_state.binned_exists_as,
-                categoric_target=None,
-            )
-            post_combined = post_combined.loc[
-                (
-                    (post_combined['column_a'] == st.session_state.binned_exists_as)
-                    | (post_combined['column_b'] == st.session_state.binned_exists_as)
-                )
-                & (post_combined['column_a'] != post_combined['column_b'])
-                & ~(
-                    (post_combined['column_a'] + " -> Binned" == post_combined['column_b'])
-                    | (post_combined['column_a'] == post_combined['column_b'] + " -> Binned")
-                )
-            ].round(3)
-            target_on_right = post_combined['column_b'] == st.session_state.binned_exists_as
-            post_combined.loc[target_on_right, ['column_a', 'column_b']] = (
-                post_combined.loc[target_on_right, ['column_b', 'column_a']].to_numpy()
-            )
-            post_combined = post_combined.sort_values(by=['column_b'], ascending=[True]).drop_duplicates(subset=['column_a', 'column_b'], keep='first').reset_index(drop=True)
-            st.dataframe(
-                data=post_combined[[col for col in post_combined if col in ['column_b', 'P-value', 'Coefficient']]],
-                width="stretch",
-                height="auto",
-                use_container_width=None,
-                hide_index=None,
-                column_order=None,
-                column_config=None,
-                key=None,
-                on_select="ignore",
-                selection_mode="multi-row",
-                row_height=None,
-                placeholder=None,
-            )
-
-    binned_mu_plot = binned_mu_plot[0]
-    with binned_mu_plot:
-        if st.session_state.binned_exists_as is not None:
-            st.markdown("Bin Means")
-            muest = MuEstimator()
-            muest.get_floating_mean_hbar(
-                st.session_state.data,
-                st.session_state.curr_original_unbinned,
-                0.95,
-                [st.session_state.binned_exists_as],
-                plot_title=None,
-                median=False,
-                streamlit=True,
-            )
-
-    r_mu_and_relation_plot = st.columns([1], gap="small", vertical_alignment="bottom", border=True, width="stretch")
-
-    r_mu_and_relation_plot = r_mu_and_relation_plot[0]
-    with r_mu_and_relation_plot:
-        if st.session_state.binned_exists_as is not None:
-            mu_column, partition_column = st.session_state.curr_original_unbinned + " -> Binned", None
-            muest2 = MuEstimator()
-            muest2.get_floating_proportion_hbar(
-                st.session_state.data,
-                mu_column,
-                0.95,
-                partition_column,
-                plot_title=None,
-                streamlit=True,
-                proportion_within_partition=True,
-            )
-
 
 
 if st.session_state.page == "Data Upload & Processing":
@@ -770,8 +433,8 @@ if st.session_state.page == "Data Upload & Processing":
         # Page navigation #
         st.header("Navigation")        
         st.session_state.page = st.radio("Navigate", 
-                                         NAVIGATION_PAGES, 
-                                         index=NAVIGATION_PAGES.index(st.session_state.page),
+                                         ["Data Upload & Processing", "Group Visualizations", "Target Visualizations", "Feedback"], 
+                                         index=["Data Upload & Processing", "Group Visualizations", "Target Visualizations", "Feedback"].index(st.session_state.page),
                                          key = 'navigation_control',
                                          on_change = set_page)
 
@@ -935,7 +598,6 @@ if st.session_state.page == "Data Upload & Processing":
 
                     st.session_state.curr_target_selection = None
                     st.session_state.curr_target_plot_lists = None
-                    reset_binning_state()
                     
 
                     st.session_state.step = 1
@@ -1456,8 +1118,8 @@ elif st.session_state.page in ["Group Visualizations", "Target Visualizations"]:
         # Page navigation #
         st.header("Navigation")
         st.session_state.page = st.radio("Navigation", 
-                                         NAVIGATION_PAGES, 
-                                         index=NAVIGATION_PAGES.index(st.session_state.page),
+                                         ["Data Upload & Processing", "Group Visualizations", "Target Visualizations", "Feedback"], 
+                                         index=["Data Upload & Processing", "Group Visualizations", "Target Visualizations", "Feedback"].index(st.session_state.page),
                                          key = 'navigation_control',
                                          on_change = set_page)
 
@@ -1922,8 +1584,8 @@ elif st.session_state.page == "Feedback":
     with st.sidebar:
         st.header("Navigation")
         st.session_state.page = st.radio("Navigation",
-                                         NAVIGATION_PAGES,
-                                         index=NAVIGATION_PAGES.index(st.session_state.page),
+                                         ["Data Upload & Processing", "Group Visualizations", "Target Visualizations", "Feedback"],
+                                         index=["Data Upload & Processing", "Group Visualizations", "Target Visualizations", "Feedback"].index(st.session_state.page),
                                          key="navigation_control",
                                          on_change=set_page)
 
@@ -1959,7 +1621,4 @@ elif st.session_state.page == "Feedback":
             st.info("No feedback yet.")
     except FileNotFoundError:
         st.info("No feedback yet.")
-
-elif st.session_state.page == "Binning Tool":
-    render_binning_tool()
 
