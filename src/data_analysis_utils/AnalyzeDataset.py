@@ -1456,7 +1456,7 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
                 min_bins, _ = self.get_a_varaibles_binning_metrics(data=data,
                                                                     target=col,
                                                                     check_multivar=include_multivariate,
-                                                                    original_value_count_threashold=5)
+                                                                    original_value_count_threshold=5)
                 if (min_bins):
                     if minimize_significant_bins!=True:
                         try:
@@ -1682,7 +1682,7 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
                                             **cat_univar_params,
                    streamlit_ = streamlit_ )
         else:
-            print('Plot Categoric Univariate is set to False')
+            print('Plot Categoric Univariate is set to False or none are detected')
 
         if num_univar!=False:
             if num_univar==True:
@@ -1696,7 +1696,7 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
                                         **num_univar_params,
                    streamlit_ = streamlit_ )
         else:
-            print('Plot Numeric Univariate is set to False')
+            print('Plot Numeric Univariate is set to False or none are detected')
 
         if catcat_bivar!=False:  
             if catcat_bivar==True:
@@ -1711,7 +1711,7 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
                                             **catcat_bivar_params,
                    streamlit_ = streamlit_ ) 
         else:
-            print('Plot Bivariate Categoric-Categoric is set to False')
+            print('Plot Bivariate Categoric-Categoric is set to False or none are detected')
 
         if numnum_bivar!=False:
             if numnum_bivar==True:
@@ -1726,7 +1726,7 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
                                             **numnum_bivar_params,
                    streamlit_ = streamlit_ )
         else:
-            print('Plot Bivariate Numeric-Numeric is set to False')
+            print('Plot Bivariate Numeric-Numeric is set to False or none are detected')
 
         if numcat_bivar!=False:
             if numcat_bivar==True:
@@ -1741,7 +1741,7 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
                                             **numcat_bivar_params,
                    streamlit_ = streamlit_ )
         else:
-            print('Plot Bivariate Numeric-Categoric is set to False')
+            print('Plot Bivariate Numeric-Categoric is set to False or none are detected')
 
         if super_subcat_pairs!=False:
             if super_subcat_pairs==True:
@@ -1756,7 +1756,7 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
                                     **super_subcat_pairs_params,
                    streamlit_ = streamlit_ ) 
         else:
-            print('Plot Supercategory-Subcategory Partitions is set to False')
+            print('Plot Supercategory-Subcategory Partitions is set to False or none are detected')
 
         return self
     
@@ -2204,12 +2204,12 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
                                         data:pd.DataFrame,
                                         target:str,
                                         check_multivar:bool|None=None,
-                                        original_value_count_threashold:int|None=None):
+                                        original_value_count_threshold:int|None=None):
 
         """
         target is a string that is a column in the dataframe
         check_multivar is True by default and indicates that multivariat features should be considered
-        original_value_count_threashold is the min number of unique values a variable can have to be considered. default is 5
+        original_value_count_threshold is the min number of unique values a variable can have to be considered. default is 5
 
         returns (targ_abs_min_bin,check_multivar) , targ_to_feature_bin_map 
             where targ_abs_min_bin is the abs min bin for the target
@@ -2218,8 +2218,8 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
         """
         if check_multivar is None:
             check_multivar=True
-        if original_value_count_threashold is None:
-            original_value_count_threashold=5
+        if original_value_count_threshold is None:
+            original_value_count_threshold=5
 
         data = data.copy()
 
@@ -2338,7 +2338,7 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
             curr_min, curr_targ_features_mins = self.determine_min_number_of_bins(dataframe=data, 
                                                 num_num_pairs=num_num_vars, 
                                                 cat_num_pairs=num_cat_vars, 
-                                                original_value_count_threashold=original_value_count_threashold, 
+                                                original_value_count_threshold=original_value_count_threshold, 
                                                 numnum_meth_alpha_above=numnum_meth_alpha_above,
                                                 numcat_meth_alpha_above=numcat_meth_alpha_above,
                                                 categoric_target=None, 
@@ -2367,7 +2367,7 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
                                data:pd.DataFrame,
                                targets:list|tuple|str|None=None,
                             check_multivar:bool|None=None,
-                            original_value_count_threashold:int|None=None):
+                            original_value_count_threshold:int|None=None):
         """
         """
         if targets is None:
@@ -2386,7 +2386,7 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
                                                                                                 data=data,
                                                                                                 target=target,
                                                                                                 check_multivar=check_multivar,
-                                                                                                original_value_count_threashold=original_value_count_threashold)
+                                                                                                original_value_count_threshold=original_value_count_threshold)
             if self.target_key_feature_meta_vals[target]['min_bins']:
                 targ_abs_min_bin = max( targ_abs_min_bin, self.target_key_feature_meta_vals[target]['min_bins'][0] )
             self.target_key_feature_meta_vals[target]['min_bins']=[targ_abs_min_bin]

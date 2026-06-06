@@ -32,7 +32,7 @@ def load_consumer_habits(filepath:str="data/shopping_behavior_updated.csv"):
     bin.relational_binner(df,
                     numnum_meth_alpha_above=('pearson',0.6,True),    
                     numcat_meth_alpha_above=('kruskal',0.05,False),   
-                    original_value_count_threashold=5,  
+                    original_value_count_threshold=5,  
                     numeric_columns=None,     
                     categoric_columns=None,    
                     numeric_target=None,      

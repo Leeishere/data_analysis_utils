@@ -315,7 +315,7 @@ class Chi2:
         elif isinstance(columns,str):
             columns=[columns]
         if cols_to_exclude_from_targets is not None:
-            if isintance(cols_to_exclude_from_targets,str):
+            if isinstance(cols_to_exclude_from_targets,str):
                 cols_to_exclude_from_targets=[cols_to_exclude_from_targets]
             columns = [col for col in columns if col not in cols_to_exclude_from_targets]
         if not columns:

@@ -10,7 +10,7 @@ import warnings
 
 class UnivariateNormal:
 
-    def __inti__(self):
+    def __init__(self):
         pass
     #test for uniformness  
     ## consider adding a flag if any cell has an expected value <

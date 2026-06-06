@@ -53,28 +53,36 @@ class ProbabilisticModeling:
         self.fitted_uniform_pdf=(lower,upper,mean,var,std)
 
     def predict_uniform_pdf(self,vector_):
+        if self.fitted_uniform_pdf is None:
+            raise ValueError("This model instance is not fitted yet. Call fit_uniform(observed_values).")
+
         vector=np.asarray(vector_.copy(),'float')  
+        lower, upper = self.fitted_uniform_pdf[:2]
+
+        if upper == lower:
+            raise ValueError("Uniform PDF is undefined when fitted lower and upper bounds are equal.")
 
         #identify indices for targeted vectorized operations
         # indices to identify P=0 
-        indices_that_are_out_of_bounds = (vector < self.fitted_uniform_pdf[0]) | (vector > self.fitted_uniform_pdf[1])
+        indices_that_are_out_of_bounds = (vector < lower) | (vector > upper)
         # indices to calculate P
-        indices_that_are_in_bounds = (vector >= self.fitted_uniform_pdf[0]) & (vector <= self.fitted_uniform_pdf[1])
+        indices_that_are_in_bounds = (vector >= lower) & (vector <= upper)
+        in_bounds_probability = 1 / (upper - lower)
 
         try:
             global jax_
             if jax_==True:
                 # set the indices to the P
                 vector=vector.at[indices_that_are_out_of_bounds].set(0)
-                vector=vector.at[indices_that_are_in_bounds].set(1 / (self.fitted_uniform_pdf[1][indices_that_are_in_bounds] - self.fitted_uniform_pdf[0][indices_that_are_in_bounds]))
+                vector=vector.at[indices_that_are_in_bounds].set(in_bounds_probability)
             else:
                 # set the indices to the P
                 vector[indices_that_are_out_of_bounds]=0
-                vector[indices_that_are_in_bounds]=1 / (self.fitted_uniform_pdf[1][indices_that_are_in_bounds] - self.fitted_uniform_pdf[0][indices_that_are_in_bounds])
+                vector[indices_that_are_in_bounds]=in_bounds_probability
         except:
             # set the indices to the P
             vector[indices_that_are_out_of_bounds]=0
-            vector[indices_that_are_in_bounds]=1 / (self.fitted_uniform_pdf[1][indices_that_are_in_bounds] - self.fitted_uniform_pdf[0][indices_that_are_in_bounds])
+            vector[indices_that_are_in_bounds]=in_bounds_probability
         return vector
     
     def predict_uniform_cdf(self,vector_):
@@ -126,7 +134,11 @@ class ProbabilisticModeling:
         
     def predict_sparse_bernoulli_pmf(self,vector_):
         """ where vector is an array of ones and zeros or True/False"""
+        if self.fitted_sparse_bernoulli is None:
+            raise ValueError("This model instance is not fitted yet. Call fit_sparse_bernoulli(observed_values).")
+
         vector=np.asarray(vector_.copy(),'float')
+        p_if_1 = self.fitted_sparse_bernoulli[0]
         # edge cases
         invalid=((vector!=0)&(vector!=1))|((vector!=0)&(vector!=1))
         if invalid.any():
@@ -139,16 +151,16 @@ class ProbabilisticModeling:
             global jax_
             if jax_==True:
                 # retrieve probabilities
-                vector=vector.at[positive_instance].set(self.fitted_sparse_bernoulli[0][positive_instance])
-                vector=vector.at[negative_instance].set(1-self.fitted_sparse_bernoulli[0][negative_instance])
+                vector=vector.at[positive_instance].set(p_if_1)
+                vector=vector.at[negative_instance].set(1-p_if_1)
             else:
                 # retrieve probabilities
-                vector[positive_instance]=self.fitted_sparse_bernoulli[0][positive_instance]
-                vector[negative_instance]=1-self.fitted_sparse_bernoulli[0][negative_instance]
+                vector[positive_instance]=p_if_1
+                vector[negative_instance]=1-p_if_1
         except:
             # retrieve probabilities
-            vector[positive_instance]=self.fitted_sparse_bernoulli[0][positive_instance]
-            vector[negative_instance]=1-self.fitted_sparse_bernoulli[0][negative_instance]
+            vector[positive_instance]=p_if_1
+            vector[negative_instance]=1-p_if_1
         return vector
     
     #===================================================  

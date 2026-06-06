@@ -20,7 +20,26 @@ except ModuleNotFoundError:
 #Note that due in part to the nature of the Consumer_Habits.csv data, support is limited to returning forecasts based on week, month, or season
 
 class PoissonSalesForecasting(ProbabilisticModeling):
+    """
+    Consumer-Habits-oriented sales forecasting helper.
+
+    Reuse assumptions and risks:
+    - ASSUMPTION: Default column headers are specific to one dataset schema.
+    - ASSUMPTION: Seasons are expected as Winter/Spring/Summer/Fall in that order.
+    - ASSUMPTION: Frequency labels must match exact strings used by freq_factor().
+    - CACHE: self.seasons and self.period_details persist on the instance and can
+        pollute results if the same object is reused across different datasets.
+    - STRUCTURE: period_details uses positional list indexes (0..8), so downstream
+        code is tightly coupled to insertion order.
+    """
+
     def __init__(self):
+        """
+        Initialize default schema headers and cached period state.
+
+        CACHE RISK: period_details stores derived values by period key ('w','m','q')
+        and is not auto-reset when a new dataframe is passed.
+        """
         self.frequency_of_purchase_col_header='Frequency of Purchases'   # a column header in Consumer_Habbits.csv: any of:['Annually','Quarterly','Monthly','Bi-Weekly','Fortnightly','Weekly']
         self.total_prev_purchases_col_header='Previous Purchases'    # a column header in Consumer_Habbits.csv:  the number of previous purchases
         self.individual_sale_purchase_amount='Purchase Amount (USD)'    #used to calculate the average single item purchase price for each season
@@ -34,6 +53,14 @@ class PoissonSalesForecasting(ProbabilisticModeling):
 
 
     def freq_factor(self,x):
+        """
+        Map purchase frequency label to a day-based factor.
+
+        WARNING: Input matching is exact-string and case-sensitive. Unrecognized
+        labels fall through without an explicit return, which propagates as NaN
+        when used with pandas .map().
+        """
+        # WARNING: Exact label match only; unknown inputs produce implicit None.
         if x=='Every 3 Months': return 365/4
         if x=='Annually': return 365/1
         if x=='Quarterly': return 365/4
@@ -48,6 +75,9 @@ class PoissonSalesForecasting(ProbabilisticModeling):
         """ returns the dataframe with an added column 
         parameters: dataframe,purchase_frequency,total_previous_purchases,new_column_name
         where purchase frequency should be of:  'Every 3 Months', 'Annually', 'Quarterly', 'Monthly', 'Bi-Weekly', 'Fortnightly', 'Weekly'
+
+        WARNING: If frequency labels do not match freq_factor() inputs exactly,
+        this column can contain NaN values.
         """
         if purchase_frequency==None:
             purchase_frequency=self.frequency_of_purchase_col_header
@@ -58,6 +88,7 @@ class PoissonSalesForecasting(ProbabilisticModeling):
             new_column_name=self.days_between_purchases_col_header
         else:
             self.days_between_purchases_col_header=new_column_name
+        # WARNING: NaN propagation occurs if freq_factor() returns None.
         df[new_column_name]=df[purchase_frequency].map(self.freq_factor)
         return df
     
@@ -66,6 +97,9 @@ class PoissonSalesForecasting(ProbabilisticModeling):
     def add_day_column(self,df,total_previous_purchases=None,new_column_name=None):
         """ returns the dataframe with an added column 
         parameters: dataframe,total_previous_purchases,new_column_name
+
+        WARNING: Assumes numeric inputs in days-between and previous-purchases
+        columns; invalid/missing values propagate downstream.
         """
 
         if total_previous_purchases is None:
@@ -78,6 +112,7 @@ class PoissonSalesForecasting(ProbabilisticModeling):
         else:
             self.days_of_patronage_col_header=new_column_name            
 
+        # ASSUMPTION: both source columns exist and are numeric.
         df[new_column_name]=df[self.days_between_purchases_col_header]*df[total_previous_purchases]
         return df    
     
@@ -86,6 +121,9 @@ class PoissonSalesForecasting(ProbabilisticModeling):
         Input dataframe should have columns: frequency_of_purchase and total_previous_purchases, the season column to partition by, and a column of sales amounts
         if frequency_of_purchase or total_previous_purchases are left as None, they will default to the ones in the Consumer_Habits Dataset.
         frequency should be of:  'Every 3 Months', 'Annually', 'Quarterly', 'Monthly', 'Bi-Weekly', 'Fortnightly', 'Weekly'
+
+        WARNING: No explicit schema validation is performed. Column-name mismatch
+        can surface later as KeyError/NaN behavior.
         """
         consumer_habits_dataset=data.copy()
         if frequency_of_purchase_col_header==None:
@@ -110,7 +148,11 @@ class PoissonSalesForecasting(ProbabilisticModeling):
         calls on consumer_habits dataset columns headers
         other datasets are not presently supported
         returns cdf of P(num purchases per month) rowwise  
+
+        WARNING: Uses model state from the parent class and reseeds Python random.
+        ASSUMPTION: season_ values align with data in the configured season column.
         """
+        # WARNING: version=2 ties sequence behavior to Python's random implementation details.
         random.seed(a=random_seed, version=2)
         data=modified_consumer_habits_dataset.copy()
         occurrences = data[self.total_prev_purchases_col_header]
@@ -133,6 +175,9 @@ class PoissonSalesForecasting(ProbabilisticModeling):
         Input dataframe should have columns: frequency_of_purchase and total_previous_purchases, the season column to partition by, and a column of sales amounts
         if frequency_of_purchase or total_previous_purchases are left as None, they will default to the ones in the Consumer_Habits Dataset.
         frequency should be of:  'Every 3 Months', 'Annually', 'Quarterly', 'Monthly', 'Bi-Weekly', 'Fortnightly', 'Weekly'
+
+        ASSUMPTION: Forecast always materializes in fixed seasonal order:
+        [Winter, Spring, Summer, Fall].
         """
         df=consumer_habits_dataframe.copy()
         df=self.add_relevant_columns(df)
@@ -140,6 +185,7 @@ class PoissonSalesForecasting(ProbabilisticModeling):
             partition_column=self.season_col_header_data_is_partitioned_by
         else: 
             self.season_col_header_data_is_partitioned_by=partition_column
+        # WARNING: Hardcoded seasonal labels/order; non-standard seasonal schemas require adaptation.
         winter=self.simulate_sales_by_season(df,occurrence_multiplier,'Winter',365/4).sum() 
         spring=self.simulate_sales_by_season(df,occurrence_multiplier,'Spring',365/4).sum() 
         summer=self.simulate_sales_by_season(df,occurrence_multiplier,'Summer',365/4).sum() 
@@ -182,9 +228,16 @@ class PoissonSalesForecasting(ProbabilisticModeling):
  
     def get_plot_data(self,df,occurrence_multiplier,period_:str='Month'):
         """
+        Build and cache period-level plotting structures in self.period_details.
 
+        WARNING: period_details is a positional list contract:
+        [0]=partitioned_seasons, [1]=period_to_aggrigate, [2]=period_size_in_days,
+        [3]=periods_per_season, [4]=period_title, [5]=total_periods,
+        [6]=zero_to_max, [7]=starts, [8]=periods.
+        Any structural change requires coordinated updates in callers.
         """
         #4 seasons per year
+        # ASSUMPTION: always four seasons per year.
         num_seasons=4
 
         #retrieve or create period data
@@ -229,6 +282,9 @@ class PoissonSalesForecasting(ProbabilisticModeling):
         """
         checks model objects for None and computes values as needed
         takes period_ as an argument and used defaults for the Consumer_Habit dataset internaly for seasonal forecasting
+
+        WARNING: Uses index [8] in period_details as a readiness signal and then
+        broad exception fallback. Unexpected errors can be masked as cache misses.
         """
 
         if total_prev_purchases is not None:
@@ -251,6 +307,7 @@ class PoissonSalesForecasting(ProbabilisticModeling):
                 return
             else:self.get_plot_data(df,occurrence_multiplier,period_)
         except:
+            # WARNING: Broad except masks root causes (KeyError/IndexError/etc.).
             self.get_plot_data(df,occurrence_multiplier,period_)
 
         
@@ -305,6 +362,9 @@ class PoissonSalesForecasting(ProbabilisticModeling):
         if auto_detect_height==True: autodetect will override figure_figsize[-1] if not None, if None, width will be set to 20 and height autodetected (min height = 4)
         
         each time it is called it stores period data as a class object, hence it will keep 'week', 'month', and 'season' in RAM
+
+        SIDE EFFECT: Mutates matplotlib global rcParams/style during execution.
+        STREAMLIT RISK: streamlit=True assumes optional streamlit import succeeded.
         """
         # a function to update stored data
         self.update_data_model_as_needed(df,occurrence_multiplier,period_,total_prev_purchases,freq_of_purchases,season_header_to_partition_sales_amounts,individual_sale_amounts)
@@ -348,6 +408,7 @@ class PoissonSalesForecasting(ProbabilisticModeling):
         if figure_figsize is not None:
             plt.figure(figsize=figure_figsize)
         # Set styles
+        # SIDE EFFECT: Global matplotlib rcParams updates affect later plots in-process.
         plt.rcParams['axes.formatter.limits'] = (-3, 3)   # force sci notation when needed
         plt.rcParams['axes.formatter.useoffset'] = True   # show offset text
         plt.rcParams['xtick.color'] = 'white'             # x-axis ticks
@@ -384,6 +445,7 @@ class PoissonSalesForecasting(ProbabilisticModeling):
         if streamlit==False:
             plt.show()
         else:
+            # WARNING: st can be None if streamlit import failed at module import time.
             fig = plt.gcf()
             st.pyplot(fig,clear_figure=True) 
         plt.rcdefaults()
@@ -411,6 +473,9 @@ class PoissonSalesForecasting(ProbabilisticModeling):
         the 4 base are input here as str(column headers) or default to Consumer_Habits dataset column headers, but can be changed
         season_header_to_partition_sales_amounts should be of 'Winter', 'Spring', 'Summer', 'Fall'
         freq_of_purchases should be of 'Every 3 Months', 'Annually', 'Quarterly', 'Monthly', 'Bi-Weekly', 'Fortnightly', 'Weekly'
+
+        ASSUMPTION: Pie labels/colors are fixed to four named seasons and rely on
+        the same ordering as predict_total_sales_per_season().
         """ 
         # a function to update stored data
         self.update_data_model_as_needed(df,occurrence_multiplier,period_,total_prev_purchases,freq_of_purchases,season_header_to_partition_sales_amounts,individual_sale_amounts)
