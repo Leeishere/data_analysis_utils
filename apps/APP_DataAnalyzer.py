@@ -475,7 +475,7 @@ def cached_min_bins(dataframe, numnum_metrics, catnum_metrics, numeric_columns_k
         dataframe,
         numnum_meth_alpha_above=tuple(numnum_metrics),
         numcat_meth_alpha_above=tuple(catnum_metrics),
-        original_value_count_threashold=5,
+        original_value_count_threshold=5,
         numeric_columns=numeric_columns,
         categoric_columns=None,
         numeric_target=None,

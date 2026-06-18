@@ -7,6 +7,30 @@ from itertools import combinations
 
 from .CompareColumns import CompareColumns
 
+
+def _resolve_original_value_count_threshold(
+    original_value_count_threshold,
+    original_value_count_threashold,
+):
+    if original_value_count_threashold is None:
+        return original_value_count_threshold
+    if (
+        original_value_count_threshold != 5
+        and original_value_count_threshold != original_value_count_threashold
+    ):
+        raise ValueError(
+            "Pass only original_value_count_threshold; the deprecated "
+            "original_value_count_threashold value conflicts with it."
+        )
+    warnings.warn(
+        "original_value_count_threashold is deprecated; use "
+        "original_value_count_threshold instead.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    return original_value_count_threashold
+
+
 class Bin(CompareColumns):
     def __init__(self):
         self.numeric_target_column_minimums=None
@@ -198,12 +222,13 @@ class Bin(CompareColumns):
                                      dataframe:pd.DataFrame, 
                                      num_num_pairs:list|tuple|None=None, 
                                      cat_num_pairs:list|tuple|None=None, 
-                                     original_value_count_threashold:int=5, 
+                                     original_value_count_threshold:int=5,
                                      numnum_meth_alpha_above:tuple|None=('welch',0.05,False),
                                      numcat_meth_alpha_above:tuple|None=('kruskal',0.05,False),
                                      categoric_target:str|list|None=None, 
                                      numeric_target:str|list|None=None,
-                                      non_pair_numnum_numcat:bool|None=None ):
+                                     non_pair_numnum_numcat:bool|None=None,
+                                     original_value_count_threashold:int|None=None):
         """
         takes output of Bin().pair_column_headers() as input
         shares alphas with Bin().pre_bin_relationships()
@@ -235,6 +260,11 @@ class Bin(CompareColumns):
                             'feature column n':..........}
         considers categoric_target, numeric_target inputs when outputting
         """
+        original_value_count_threshold = _resolve_original_value_count_threshold(
+            original_value_count_threshold,
+            original_value_count_threashold,
+        )
+
         # make sure targets are list or None
         if isinstance(categoric_target,str):
             categoric_target=[categoric_target]
@@ -278,7 +308,7 @@ class Bin(CompareColumns):
         y_relation_to_x_col_thresholds={}
         #iterate through target-numeric columns
         for col in cols_to_bin:
-            if data[col].nunique(dropna=True) <= original_value_count_threashold:
+            if data[col].nunique(dropna=True) <= original_value_count_threshold:
                 continue
             #extract the columns that will be x-features
             if non_pair_numnum_numcat==True:
@@ -312,7 +342,7 @@ class Bin(CompareColumns):
 
             # make calls to func min bins and metrics
             min_number_of_bins_numerical, min_number_of_bins_categorical = None, None
-            # boolean varaibles: 
+            # boolean variables:
             is_cat_columns= not (not x_cat_columns)
             not_cat_columns= (not x_cat_columns)
             is_numcat_metrics=(numcat_meth_alpha_above is not None)
@@ -382,14 +412,15 @@ class Bin(CompareColumns):
                         df,
                         numnum_meth_alpha_above:tuple|None=('welch',0.05,False),
                         numcat_meth_alpha_above:tuple|None=('kruskal',0.05,False),
-                        original_value_count_threashold:int=5,
+                        original_value_count_threshold:int=5,
                         numeric_columns:list|tuple|None=None,
                         categoric_columns:list|tuple|None=None,
                         numeric_target:str|list|None=None,
-                        categoric_target:str|list|None=None ):
+                        categoric_target:str|list|None=None,
+                        original_value_count_threashold:int|None=None):
         """
         This calculated before statistics and uses those to elect bin cantidates
-        where original_value_count_threashold=5 is the default threashold. columns with <=threashold unique values won't be considered
+        where original_value_count_threshold=5 is the default threshold. columns with <=threshold unique values won't be considered
         
         call coeff or p-value functions based on 
         numnum_method = one of ('spearman','kendall','pearson','welch','student')
@@ -402,7 +433,7 @@ class Bin(CompareColumns):
             numnum_meth_alpha_above:tuple|None=('welch',0.05,False),
             numcat_meth_alpha_above:tuple|None=('kruskal',0.05,False)
                 where each tuple is (test_method, threshold, keep >= threshold): (str,float,bool)
-            original_value_count_threashold : sets the minimum number of unique values a column can have to be considered for binning. default==5
+            original_value_count_threshold : sets the minimum number of unique values a column can have to be considered for binning. default==5
             numeric_columns : allows input of numeric columns. default is autodetect. it is an all or none approach. either input columns or autodetect
             categoric_columns : allows input of categoric columns. default is autodetect. it is an all or none approach. either input columns or autodetect
             categoric_target : a categoric column that can be tested against every numeric column [but only one numeric at a time]
@@ -411,6 +442,11 @@ class Bin(CompareColumns):
                     Targets are exclusive, such that no consiteration is made for any pair of columns that doesn't involve a target
 
         """
+        original_value_count_threshold = _resolve_original_value_count_threshold(
+            original_value_count_threshold,
+            original_value_count_threashold,
+        )
+
         if (numnum_meth_alpha_above is not None) and (not isinstance(numnum_meth_alpha_above[2],bool)):
             raise ValueError("Variable numnum_meth_alpha_above for Numeric to Numeric at index 2 should be a boolean value.", ValueError)
         if (numcat_meth_alpha_above is not None) and (not isinstance(numcat_meth_alpha_above[2],bool)):
@@ -427,7 +463,7 @@ class Bin(CompareColumns):
         self.numeric_target_column_minimums, self.numeric_feature_col_thresholds = self.determine_min_number_of_bins(df, 
                                                                                                                      num_num_pairs, 
                                                                                                                      cat_num_pairs, 
-                                                                                                                     original_value_count_threashold, 
+                                                                                                                     original_value_count_threshold,
                                                                                                                      numnum_meth_alpha_above=numnum_meth_alpha_above,
                                                                                                                      numcat_meth_alpha_above=numcat_meth_alpha_above,
                                                                                                                      categoric_target=categoric_target,
@@ -435,4 +471,3 @@ class Bin(CompareColumns):
         return self.numeric_target_column_minimums
     #=============================================================================================================================================================
     #=============================================================================================================================================================
-    

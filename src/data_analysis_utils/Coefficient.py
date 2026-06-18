@@ -4,6 +4,17 @@ import itertools
 from itertools import combinations
 
 
+VALID_CORRELATION_METHODS = ("pearson", "spearman", "kendall")
+
+
+def _validate_correlation_method(method: str) -> None:
+    if method not in VALID_CORRELATION_METHODS:
+        raise ValueError(
+            "Correlation method must be one of "
+            f"{VALID_CORRELATION_METHODS}. Received {method!r}."
+        )
+
+
 
 
 class Coefficient:
@@ -16,6 +27,7 @@ class Coefficient:
         Iterates through all input dataframe columns and caculates the correlation with target column(s)
         returns an unsorted dataframe data[number_1, number_2, Correlation]
         """
+        _validate_correlation_method(method)
         if type(target)==str:
             target=[target]
         cols=data.columns
@@ -37,17 +49,23 @@ class Coefficient:
     def test_all_num_num_coefficient(self,data,corr_method:str='spearman', numeric_columns:str|list|None=None, target:list|str|None=None):
         """
         Where numeric_columns==None will fall back to auto_detect
-        """        
+        """
+        _validate_correlation_method(corr_method)
         if numeric_columns is None: 
             numeric_columns=list(data.select_dtypes('number').columns)
         if  isinstance(numeric_columns,str):
-            numeric_columns=numeric_columns
+            numeric_columns=[numeric_columns]
 
         num_data=pd.DataFrame(data.copy())
         if target is not None:
             if isinstance(target,str):
                 target=[target]
-            return self.target_features_corr_to_rest(num_data[list(set(numeric_columns+target))],target,method='pearson')
+            columns_to_correlate = list(dict.fromkeys(numeric_columns + target))
+            return self.target_features_corr_to_rest(
+                num_data[columns_to_correlate],
+                target,
+                method=corr_method,
+            )
         num_data=num_data[numeric_columns].corr(method=corr_method).unstack().reset_index(drop=False).rename(columns={'level_0':'numeric_1','level_1':'numeric_2',0:'Correlation'})
         mask=num_data['numeric_1']!=num_data['numeric_2']
         num_data = num_data.loc[mask].reset_index(drop=True)
@@ -68,6 +86,5 @@ class Coefficient:
         elif keep_above_corr==False: 
             num_data = num_data.loc[np.abs(num_data['Correlation'])<corr_threshold].reset_index(drop=True)
         return num_data
-
 
 

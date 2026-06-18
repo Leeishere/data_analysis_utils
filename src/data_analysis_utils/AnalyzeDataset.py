@@ -45,8 +45,40 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
             catcat_meth_alpha_above_instructions:list|tuple|None|bool=True,
             good_of_fit_uniform_test_instructions:list|tuple|None|bool=True,
                 True defaults to default params, None and False indicate it is not tested (such as for debugging)
+                A direct test instruction, such as ('chi2', 0.05, None),
+                is normalized to a list containing that instruction.
 
-        """   
+        """
+        def normalize_test_instructions(instructions, default):
+            if instructions is True:
+                return default.copy()
+            if instructions is False or instructions is None:
+                return None
+            if not isinstance(instructions, (list, tuple)):
+                raise ValueError(
+                    "Test instructions must be True, False, None, a three-item "
+                    "instruction, or a sequence of three-item instructions."
+                )
+            if not instructions:
+                return []
+
+            if isinstance(instructions[0], str):
+                instructions = [instructions]
+
+            normalized = []
+            for instruction in instructions:
+                if not isinstance(instruction, (list, tuple)):
+                    raise ValueError(
+                        "Each test instruction must be a list or tuple."
+                    )
+                if len(instruction) != 3:
+                    raise ValueError(
+                        "Each test instruction must contain a method, threshold, "
+                        "and threshold direction."
+                    )
+                normalized.append(tuple(instruction))
+            return normalized
+
         # 6 parameters that are for plotting
         # these are defaults that can be modified in the function parameters as a dict of parameters
         # they could be relocated into the function, but put here for future access, such as to modify or put into class __init__()
@@ -96,9 +128,18 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
         self.multivariate_concatenation_delimiter       = "_|&|_" if multivariate_concatenation_delimiter is None else multivariate_concatenation_delimiter
              
         # test instructions
-        self.numnum_meth_alpha_above              = [('pearson',0.6,None),('spearman',0.6,None),('kendall',0.6,None)] if numnum_meth_alpha_above_instructions == True else None if numnum_meth_alpha_above_instructions == False else numnum_meth_alpha_above_instructions # where t tests cannot share the parameter with correlation tests
-        self.numcat_meth_alpha_above              = [('kruskal',0.05,None),('anova',0.05,None)] if numcat_meth_alpha_above_instructions == True else None if numcat_meth_alpha_above_instructions == False else numcat_meth_alpha_above_instructions # where variable is not like stat dataframe. dataframe has numric in column 0 and categoric in column 1
-        self.catcat_meth_alpha_above              = [('chi2',0.05,None)] if catcat_meth_alpha_above_instructions == True else None if catcat_meth_alpha_above_instructions == False else catcat_meth_alpha_above_instructions
+        self.numnum_meth_alpha_above = normalize_test_instructions(
+            numnum_meth_alpha_above_instructions,
+            [('pearson',0.6,None),('spearman',0.6,None),('kendall',0.6,None)],
+        )
+        self.numcat_meth_alpha_above = normalize_test_instructions(
+            numcat_meth_alpha_above_instructions,
+            [('kruskal',0.05,None),('anova',0.05,None)],
+        )
+        self.catcat_meth_alpha_above = normalize_test_instructions(
+            catcat_meth_alpha_above_instructions,
+            [('chi2',0.05,None)],
+        )
         self.good_of_fit_uniform_test_instructions = (0.05,None) if good_of_fit_uniform_test_instructions == True else None if good_of_fit_uniform_test_instructions == False else good_of_fit_uniform_test_instructions
         self.normal_test_instrucitons             = (0.05,None) if normal_test_instructions == True else None if normal_test_instructions == False else normal_test_instructions
 
@@ -246,6 +287,16 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
 
         # get rej null or above threshold coefficients
         list_of_tests = [i[0] for i in test_instructions]
+        if (
+            check_assumptions
+            and 'P-value' in test_df.columns
+            and 'assumptions_met' in test_df.columns
+        ):
+            test_df = test_df.copy()
+            test_df.loc[
+                ~np.isfinite(test_df['P-value']),
+                'assumptions_met',
+            ] = False
         rej_or_corr_df = test_df.loc[test_df['test'].isin(list_of_tests)]
         failrej_or_below_corr_df = test_df.loc[test_df['test'].isin(list_of_tests)]
         # capture all assumptions_met==False
@@ -255,11 +306,11 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
         for instructions in test_instructions:
             # determine which side of threshold is of interest in this tests 
             if (instructions[0] in ('pearson','spearman','kendall')) and ('Correlation' in test_df.columns):  # Correlation might not be included if targets are cat
-                rej_or_corr_df = rej_or_corr_df.loc[~((rej_or_corr_df['test']==instructions[0])&(rej_or_corr_df['Correlation']<instructions[1]))]
-                failrej_or_below_corr_df = failrej_or_below_corr_df.loc[~((failrej_or_below_corr_df['test']==instructions[0])&(failrej_or_below_corr_df['Correlation']>=instructions[1]))]
+                rej_or_corr_df = rej_or_corr_df.loc[~((rej_or_corr_df['test']==instructions[0])&(rej_or_corr_df['Correlation'].abs()<instructions[1]))]
+                failrej_or_below_corr_df = failrej_or_below_corr_df.loc[~((failrej_or_below_corr_df['test']==instructions[0])&(failrej_or_below_corr_df['Correlation'].abs()>=instructions[1]))]
             elif ('P-value' in test_df.columns):   # P-value might not be included if all targets and columns are numeric
-                rej_or_corr_df = rej_or_corr_df.loc[~((rej_or_corr_df['test']==instructions[0])&(rej_or_corr_df['P-value']>=instructions[1]))]
-                failrej_or_below_corr_df = failrej_or_below_corr_df.loc[~((failrej_or_below_corr_df['test']==instructions[0])&(failrej_or_below_corr_df['P-value']<instructions[1]))]
+                rej_or_corr_df = rej_or_corr_df.loc[~((rej_or_corr_df['test']==instructions[0])&((~np.isfinite(rej_or_corr_df['P-value']))|(rej_or_corr_df['P-value']>=instructions[1])))]
+                failrej_or_below_corr_df = failrej_or_below_corr_df.loc[~((failrej_or_below_corr_df['test']==instructions[0])&((~np.isfinite(failrej_or_below_corr_df['P-value']))|(failrej_or_below_corr_df['P-value']<instructions[1])))]
         
         # filter out all assumptions_met==False & and concat assumption met result to test type
         if (check_assumptions) and ('assumptions_met' in rej_or_corr_df.columns):
@@ -617,10 +668,10 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
             """
             res = None
             for ind,val in enumerate(lst):
-                if val == memeber:
+                if val == member:
                     res=ind
                     break
-                return res
+            return res
 
         # determine what pairs to test
         if pairs_list is None:
@@ -644,8 +695,12 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
             is_supsub.append(is_partitioned)
             if first_way:
                 order=[pair[0], pair[1]]
-            else:
+            elif second_way:
                 order=[ pair[1], pair[0]]
+            else:
+                # No direction was established, so preserve the tested pair's
+                # original orientation.
+                order=[pair[0], pair[1]]
             list_reordered.append(order)
         return list_reordered, is_supsub  
     
@@ -728,21 +783,64 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
         self._update_model_with_test_df_to_col_pairs_and_cols_as_targets(test_df=test_df,
                                                                         targets=targets,
                                                                         check_assumptions=check_assumptions)
-        # update class object that tracks variables that have been fit
+        # Track only explicit targets, or the selected/autodetected columns
+        # whose enabled test families treated them as targets.
         if targets:
-            t_update = set(targets)
-        else: 
-            t_update = set()
-            if (self.numcat_meth_alpha_above is not None) or ((self.numnum_meth_alpha_above is not None) and (self.catcat_meth_alpha_above is not None)):
-                headers=set(df.columns)
-                t_update.update(headers)
+            numeric_t_update = set(
+                [numeric_target]
+                if isinstance(numeric_target, str)
+                else numeric_target or []
+            )
+            categoric_t_update = set(
+                [categoric_target]
+                if isinstance(categoric_target, str)
+                else categoric_target or []
+            )
+        else:
+            if numeric_columns is None:
+                selected_numeric_columns = set(
+                    df.select_dtypes([np.number, 'number']).columns
+                )
+            elif isinstance(numeric_columns, str):
+                selected_numeric_columns = {numeric_columns}
             else:
-                if numnum_meth_alpha_above is not None:
-                    nums= set(df.select_dtypes([np.number,'number']))
-                    t_update.update(nums)
-                if catcat_meth_alpha_above is not None:
-                    cats= set(df.select_dtypes(['object','category']))
-                    t_update.update(cats)                              
+                selected_numeric_columns = set(numeric_columns)
+
+            if categoric_columns is None:
+                selected_categoric_columns = set(
+                    df.select_dtypes(['object', 'category']).columns
+                )
+            elif isinstance(categoric_columns, str):
+                selected_categoric_columns = {categoric_columns}
+            else:
+                selected_categoric_columns = set(categoric_columns)
+
+            numeric_t_update = set()
+            if (
+                self.numnum_meth_alpha_above is not None
+                or self.numcat_meth_alpha_above is not None
+            ):
+                numeric_t_update.update(selected_numeric_columns)
+
+            categoric_t_update = set()
+            if (
+                self.catcat_meth_alpha_above is not None
+                or self.numcat_meth_alpha_above is not None
+            ):
+                categoric_t_update.update(selected_categoric_columns)
+
+        t_update = numeric_t_update | categoric_t_update
+        for target in numeric_t_update:
+            if target not in self.target_key_feature_meta_vals:
+                self.target_key_feature_meta_vals[target] = self._blank_target_dict()
+            if not self.target_key_feature_meta_vals[target]['target_dtype']:
+                self.target_key_feature_meta_vals[target]['target_dtype'] = ['numeric']
+        for target in categoric_t_update:
+            if target not in self.target_key_feature_meta_vals:
+                self.target_key_feature_meta_vals[target] = self._blank_target_dict()
+            if not self.target_key_feature_meta_vals[target]['target_dtype']:
+                self.target_key_feature_meta_vals[target]['target_dtype'] = ['categoric']
+
         self.has_called_fit_column_relationships.update(t_update)
 
         return self
@@ -1175,32 +1273,44 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
 
 
         for tf_bool, cols in zip(true_false_list,sup_subs):
-            if tf_bool==True:
-                if cols not in self.supercategory_subcategory_pairs:
-                    self.supercategory_subcategory_pairs.append(cols)
-            # store record of fit columns in class.The pairs should already have been filtered in self._are_supercat_subcats()
+            # Record every tested pair, including pairs that do not meet the
+            # super/subcategory evidence threshold.
             if (sorted(cols.copy()) not in self.has_called_fit_supercat_subcat_pairs):
                 self.has_called_fit_supercat_subcat_pairs.append(sorted(cols.copy()))
 
-            
+            # Failed pairs must not mutate relationship state or target
+            # super/subcategory metadata.
+            if not tf_bool:
+                continue
+
+            if cols not in self.supercategory_subcategory_pairs:
+                self.supercategory_subcategory_pairs.append(cols)
+
             #identify each
             super, sub = cols[0], cols[1]
             super_test, sub_test =  None, None
-            super_index=find_member(super, 
-                        self.target_key_feature_meta_vals[sub]['significant_categoric_relationships'],
-                        search_val_type='string', 
-                        search_val_len=None)
+            super_meta = self.target_key_feature_meta_vals.get(super)
+            sub_meta = self.target_key_feature_meta_vals.get(sub)
+            super_index = None
+            sub_index = None
+
+            if sub_meta is not None:
+                super_index=find_member(super,
+                            sub_meta['significant_categoric_relationships'],
+                            search_val_type='string',
+                            search_val_len=None)
             if super_index is not None:
                 # capture test
-                super_test = self.target_key_feature_meta_vals[sub]['significant_categoric_tests'][super_index]
+                super_test = sub_meta['significant_categoric_tests'][super_index]
 
-            sub_index=find_member(sub, 
-                                self.target_key_feature_meta_vals[super]['significant_categoric_relationships'], 
-                                    search_val_type='string', 
-                                    search_val_len=None)
+            if super_meta is not None:
+                sub_index=find_member(sub,
+                                    super_meta['significant_categoric_relationships'],
+                                        search_val_type='string',
+                                        search_val_len=None)
             if sub_index is not None:
                 # capture test
-                sub_test = self.target_key_feature_meta_vals[super]['significant_categoric_tests'][sub_index]
+                sub_test = super_meta['significant_categoric_tests'][sub_index]
 
             # >remove supercat subcat pairs from self.reject_null_catcat  the next loop stores them based on targets
             if isolate_super_subs==True:
@@ -1219,41 +1329,41 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
 
                 
                 # update targets by removing super/sub and capturing tests. both will be used to update super/sub values in dict
-                if super in self.has_called_fit_column_relationships:
-
-                        try:
-                            discard_col=self.target_key_feature_meta_vals[super]['significant_categoric_relationships'].pop(sub_index)
-                            discard_test=self.target_key_feature_meta_vals[super]['significant_categoric_tests'].pop(sub_index)
-                        except:
-                            if sub_index<(len(self.target_key_feature_meta_vals[super]['significant_categoric_relationships'])-1):
-                                self.target_key_feature_meta_vals[super]['significant_categoric_relationships']=self.target_key_feature_meta_vals[super]['significant_categoric_relationships'][:sub_index]+self.target_key_feature_meta_vals[super]['significant_categoric_relationships'][sub_index+1:]
-                                self.target_key_feature_meta_vals[super]['significant_categoric_tests']        =        self.target_key_feature_meta_vals[super]['significant_categoric_tests'][:sub_index]+self.target_key_feature_meta_vals[super]['significant_categoric_tests'][sub_index+1:]
-                            else:
-                                self.target_key_feature_meta_vals[super]['significant_categoric_relationships']=self.target_key_feature_meta_vals[super]['significant_categoric_relationships'][:sub_index]
-                                self.target_key_feature_meta_vals[super]['significant_categoric_tests']        =        self.target_key_feature_meta_vals[super]['significant_categoric_tests'][:sub_index]
+                if (
+                    super in self.has_called_fit_column_relationships
+                    and super_meta is not None
+                    and sub_index is not None
+                ):
+                    super_meta['significant_categoric_relationships'].pop(sub_index)
+                    super_meta['significant_categoric_tests'].pop(sub_index)
                     
             
                 # update targets by removing super/sub and capturing tests. both will be used to update super/sub values in dict
-                if sub in self.has_called_fit_column_relationships:
-
-                        try:
-                            discard_col=self.target_key_feature_meta_vals[sub]['significant_categoric_relationships'].pop(super_index)
-                            discard_test=self.target_key_feature_meta_vals[sub]['significant_categoric_tests'].pop(super_index)
-                        except:
-                            if super_index<(len(self.target_key_feature_meta_vals[sub]['significant_categoric_relationships'])-1):
-                                self.target_key_feature_meta_vals[sub]['significant_categoric_relationships']=self.target_key_feature_meta_vals[sub]['significant_categoric_relationships'][:super_index]+self.target_key_feature_meta_vals[sub]['significant_categoric_relationships'][super_index+1:]
-                                self.target_key_feature_meta_vals[sub]['significant_categoric_tests']        =        self.target_key_feature_meta_vals[sub]['significant_categoric_tests'][:super_index]+self.target_key_feature_meta_vals[sub]['significant_categoric_tests'][super_index+1:]
-                            else:
-                                self.target_key_feature_meta_vals[sub]['significant_categoric_relationships']=self.target_key_feature_meta_vals[sub]['significant_categoric_relationships'][:super_index]
-                                self.target_key_feature_meta_vals[sub]['significant_categoric_tests']        =        self.target_key_feature_meta_vals[sub]['significant_categoric_tests'][:super_index]
+                if (
+                    sub in self.has_called_fit_column_relationships
+                    and sub_meta is not None
+                    and super_index is not None
+                ):
+                    sub_meta['significant_categoric_relationships'].pop(super_index)
+                    sub_meta['significant_categoric_tests'].pop(super_index)
                     
             # UPDATE TARGETS by adding super/sub and tests
-            if (sub in self.has_called_fit_column_relationships) and (super not in self.target_key_feature_meta_vals[sub]['paired_to_a_supercategory']):
-                self.target_key_feature_meta_vals[sub]['paired_to_a_supercategory_tests'].append(super_test)
-                self.target_key_feature_meta_vals[sub]['paired_to_a_supercategory'].append(super)
-            if (super in self.has_called_fit_column_relationships) and (sub not in self.target_key_feature_meta_vals[super]['paired_to_a_subcategory']):
-                self.target_key_feature_meta_vals[super]['paired_to_a_subcategory_tests'].append(sub_test)
-                self.target_key_feature_meta_vals[super]['paired_to_a_subcategory'].append(sub)
+            if (
+                sub in self.has_called_fit_column_relationships
+                and sub_meta is not None
+                and super_test is not None
+                and super not in sub_meta['paired_to_a_supercategory']
+            ):
+                sub_meta['paired_to_a_supercategory_tests'].append(super_test)
+                sub_meta['paired_to_a_supercategory'].append(super)
+            if (
+                super in self.has_called_fit_column_relationships
+                and super_meta is not None
+                and sub_test is not None
+                and sub not in super_meta['paired_to_a_subcategory']
+            ):
+                super_meta['paired_to_a_subcategory_tests'].append(sub_test)
+                super_meta['paired_to_a_subcategory'].append(sub)
         return self
     
 
@@ -1370,11 +1480,8 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
         if (fit_supercat_subcats==True) and (not ((numeric_target is not None) and (categoric_target is None))):
             fit_super_subcat_args=self.supercat_subcat_params
             self.fit_supercat_subcat_pairs(data=data,
-                                            **fit_super_subcat_args) 
-        
-
-
-
+                                            **fit_super_subcat_args)
+        return self
 
     ##############################################################################################################################
     ##############################################################################################################################
@@ -1453,7 +1560,7 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
         keep_bins_significant = {}
         if force_significant_bin_edges==True:
             for col in numerical:
-                min_bins, _ = self.get_a_varaibles_binning_metrics(data=data,
+                min_bins, _ = self.get_a_variables_binning_metrics(data=data,
                                                                     target=col,
                                                                     check_multivar=include_multivariate,
                                                                     original_value_count_threshold=5)
@@ -1915,20 +2022,48 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
                                               )
                 else:
                     raise RuntimeError(f'{target} has not been fit. Set auto_fit==True, or fit_multivariate_column_relationships() needs to be called.')
-            # check if the target has been tested/fit for to a univariate distribution, and if auto_fit==True, call fit if needed            
+            target_meta = self.target_key_feature_meta_vals[target]
+            target_is_numeric = target_meta['target_dtype'] == ['numeric']
+            target_is_categoric = target_meta['target_dtype'] == ['categoric']
+
+            # check if the target has been tested/fit for to a univariate distribution, and if auto_fit==True, call fit if needed
             if (not_uniform_or_reject_normal==True):
-                if  (target_dtype in ('object','category'))  and (target not in self.has_called_fit_goodness_of_fit_uniform):
+                if (
+                    target_is_categoric
+                    and target not in self.has_called_fit_goodness_of_fit_uniform
+                ):
                     if (auto_fit==True):
-                        self.fit_goodness_of_fit_uniform(data,
-                                        categoric_columns=target,
-                                        dropna=dropna_gof,
-                                        check_assumptions=check_assumptions)
+                        if self.good_of_fit_uniform_test_instructions is None:
+                            warnings.warn(
+                                "Uniform goodness-of-fit testing is disabled; "
+                                f"skipping auto-fit for {target}.",
+                                UserWarning,
+                            )
+                        else:
+                            self.fit_goodness_of_fit_uniform(
+                                data,
+                                categoric_columns=target,
+                                dropna=dropna_gof,
+                                check_assumptions=check_assumptions,
+                            )
                     else:
                         raise RuntimeError(f'{target} has not been fit. Set auto_fit==True, or fit_goodness_of_fit_uniform() needs to be called.')
-                elif  (target_dtype in (float,np.float64,'float64','float32','float16',np.number,'numeric','number'))  and (target not in self.has_called_fit_normal):
+                elif (
+                    target_is_numeric
+                    and target not in self.has_called_fit_normal
+                ):
                     if (auto_fit==True):
-                        self.fit_normal(data,
-                                    categoric_columns=target)
+                        if self.normal_test_instrucitons is None:
+                            warnings.warn(
+                                "Normality testing is disabled; skipping "
+                                f"normality auto-fit for {target}.",
+                                UserWarning,
+                            )
+                        else:
+                            self.fit_normal(
+                                data,
+                                numeric_columns=target,
+                            )
                     else:
                         raise RuntimeError(f'{target} has not been fit. Set auto_fit==True, or fit_normal() needs to be called.')
             # check if the target has been tested/fit for super_subcat relationships, and if auto_fit==True, call fit if needed           
@@ -2200,7 +2335,7 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
     # does not update the model
     #######################################################################################
 
-    def get_a_varaibles_binning_metrics(self,
+    def get_a_variables_binning_metrics(self,
                                         data:pd.DataFrame,
                                         target:str,
                                         check_multivar:bool|None=None,
@@ -2223,7 +2358,7 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
 
         data = data.copy()
 
-        # stage data based on test type because many varaibles can have multiple test types
+        # stage data based on test type because many variables can have multiple test types
         test_dict = {'pearson':set(),'spearman':set(),'kendall':set(),'anova':set(),'kruskal':set(),'welch':set(),'student':set()}
 
         # gather target specific data
@@ -2293,9 +2428,11 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
         targ_to_feature_bin_map = {}
         
         for key, value in test_dict.items():
+            if not value:
+                continue
             if key in ('pearson','spearman','kendall'):
                 threshold = None
-                for meta in self.numnum_meth_alpha_above:
+                for meta in self.numnum_meth_alpha_above or []:
                     if meta[0] == key:
                         threshold = meta[1]
                         break
@@ -2308,21 +2445,20 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
                 num_cat_vars=None   
             elif key in ('welch','student'):
                 threshold = None
-                for meta in self.numnum_meth_alpha_above:
+                for meta in self.numnum_meth_alpha_above or []:
                     if meta[0] == key:
                         threshold = meta[1]
                         break
                 if threshold is None:
                     continue
                     #raise ValueError('Test type does not match model parameters')        
-                self.numnum_meth_alpha_above
                 numnum_meth_alpha_above=(key,threshold,False)
                 numcat_meth_alpha_above=None
                 num_num_vars=list(value)
                 num_cat_vars=None        
             elif key in('anova','kruskal'):
                 threshold = None
-                for meta in self.numcat_meth_alpha_above:
+                for meta in self.numcat_meth_alpha_above or []:
                     if meta[0] == key:
                         threshold = meta[1]
                         break
@@ -2361,7 +2497,25 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
         data = data.drop(columns=concated_temp_cols)
 
         return targ_abs_min_bin , targ_to_feature_bin_map
-    
+
+    def get_a_varaibles_binning_metrics(self,
+                                        data:pd.DataFrame,
+                                        target:str,
+                                        check_multivar:bool|None=None,
+                                        original_value_count_threshold:int|None=None):
+        """Deprecated compatibility alias for get_a_variables_binning_metrics."""
+        warnings.warn(
+            "get_a_varaibles_binning_metrics is deprecated; use "
+            "get_a_variables_binning_metrics instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.get_a_variables_binning_metrics(
+            data=data,
+            target=target,
+            check_multivar=check_multivar,
+            original_value_count_threshold=original_value_count_threshold,
+        )
 
     def fit_binning_thresholds(self,
                                data:pd.DataFrame,
@@ -2372,7 +2526,7 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
         """
         if targets is None:
             targets = []
-            for col,v in self.items():
+            for col,v in self.target_key_feature_meta_vals.items():
                 if v['target_dtype']==['numeric']:
                     targets.append(col)
         elif isinstance(targets,str):
@@ -2382,19 +2536,23 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
         if original_value_count_threshold is None:
             original_value_count_threshold = 5
         for target in targets:
-            targ_abs_min_bin , targ_to_feature_bin_map = self.get_a_varaibles_binning_metrics(self,
-                                                                                                data=data,
-                                                                                                target=target,
-                                                                                                check_multivar=check_multivar,
-                                                                                                original_value_count_threshold=original_value_count_threshold)
-            if self.target_key_feature_meta_vals[target]['min_bins']:
-                targ_abs_min_bin = max( targ_abs_min_bin, self.target_key_feature_meta_vals[target]['min_bins'][0] )
-            self.target_key_feature_meta_vals[target]['min_bins']=[targ_abs_min_bin]
+            targ_abs_min_bin , targ_to_feature_bin_map = self.get_a_variables_binning_metrics(
+                data=data,
+                target=target,
+                check_multivar=check_multivar,
+                original_value_count_threshold=original_value_count_threshold,
+            )
+            stored_min_bins = self.target_key_feature_meta_vals[target]['min_bins']
+            existing_min_bin = stored_min_bins[0] if stored_min_bins else None
+            if existing_min_bin is None:
+                combined_min_bin = targ_abs_min_bin
+            elif targ_abs_min_bin is None:
+                combined_min_bin = existing_min_bin
+            else:
+                combined_min_bin = max(existing_min_bin, targ_abs_min_bin)
+            self.target_key_feature_meta_vals[target]['min_bins']=[combined_min_bin]
             self.target_key_feature_meta_vals[target]['min_bins_by_feature'].update(targ_to_feature_bin_map)
-           
-                
-                
-                
+        return self
     
     #################################################################################################
     #  column_relationships_df(),  TO RETURN A DATAFRAME FROM self.target_key_feature_meta_vals
@@ -2493,7 +2651,3 @@ class AnalyzeDataset(Bin, CompareColumns, Chi2, PlotClass, UnivariateNormal):
                                                         'MaxLenCombosComparedTo'])
         return result_dataframe
         
-
-
-
-

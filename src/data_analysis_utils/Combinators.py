@@ -1,44 +1,62 @@
+"""Exact factorial, permutation, and combination helpers."""
+
+from math import comb, factorial, perm
+from numbers import Integral, Real
 
 
+def _as_nonnegative_integer(value: int | float, parameter_name: str) -> int:
+    """Return *value* as an int when it represents a nonnegative integer."""
+    if isinstance(value, bool):
+        raise TypeError(f"{parameter_name} must be an integer, not bool.")
 
-from math import gamma, factorial
-
-
-
-def calculate_factorial(number:int|float):
-    """
-    where number can be in >=0 or float >=2
-    this returns float(factorial)
-    """
-    if number<0:
-        raise ValueError("Can't compute factorials for negative numbers")
-    elif number<=1.000001:
-        return 1
-    elif number > 171:
-        number=int(round(number))
-        return int(factorial(number))
+    if isinstance(value, Integral):
+        integer_value = int(value)
+    elif isinstance(value, Real) and float(value).is_integer():
+        integer_value = int(value)
     else:
-        return int(round(gamma(number-1),0))
+        raise TypeError(f"{parameter_name} must be an integer.")
 
-def calculate_num_permutations(total_population, selection_size):
-    """
-    """
-    #Permutation(n,r) == Permutation(total_population,selection_size) == total_population!/(total_population-selection_size)!
-    factorial_total_population=calculate_factorial(total_population)
-    total_population_minus_selection_size=total_population - selection_size
-    if total_population_minus_selection_size<0:
-        raise ValueError("Selection size can't be greater than population size.")
-    factorial_total_population_minus_selection_size=calculate_factorial(total_population_minus_selection_size)
-    return int(round(factorial_total_population / factorial_total_population_minus_selection_size,0))
+    if integer_value < 0:
+        raise ValueError(f"{parameter_name} must be nonnegative.")
 
-def calculate_num_combinations(total_population, selection_size):
-    """
-    """
-    #Combination(n,r) == Combination(total_population,selection_size) == total_population!/(selection_size!(total_population-selection_size)!)
-    factorial_total_population=calculate_factorial(total_population)
-    factorial_selection_size=calculate_factorial(selection_size)
-    total_population_minus_selection_size=total_population - selection_size
-    if total_population_minus_selection_size<0:
+    return integer_value
+
+
+def calculate_factorial(number: int | float) -> int:
+    """Return the exact factorial of a nonnegative integer."""
+    number = _as_nonnegative_integer(number, "number")
+    return factorial(number)
+
+
+def calculate_num_permutations(
+    total_population: int | float,
+    selection_size: int | float,
+) -> int:
+    """Return the exact number of ordered selections of the requested size."""
+    total_population = _as_nonnegative_integer(
+        total_population,
+        "total_population",
+    )
+    selection_size = _as_nonnegative_integer(selection_size, "selection_size")
+
+    if selection_size > total_population:
         raise ValueError("Selection size can't be greater than population size.")
-    factorial_total_population_minus_selection_size=calculate_factorial(total_population_minus_selection_size)
-    return int(round(factorial_total_population / ( factorial_selection_size * factorial_total_population_minus_selection_size ),0))
+
+    return perm(total_population, selection_size)
+
+
+def calculate_num_combinations(
+    total_population: int | float,
+    selection_size: int | float,
+) -> int:
+    """Return the exact number of unordered selections of the requested size."""
+    total_population = _as_nonnegative_integer(
+        total_population,
+        "total_population",
+    )
+    selection_size = _as_nonnegative_integer(selection_size, "selection_size")
+
+    if selection_size > total_population:
+        raise ValueError("Selection size can't be greater than population size.")
+
+    return comb(total_population, selection_size)

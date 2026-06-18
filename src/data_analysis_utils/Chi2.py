@@ -6,9 +6,7 @@ import pandas as pd
 import numpy as np
 import itertools
 from itertools import combinations
-import scipy
-from scipy import special
-from scipy.special import chdtrc
+import scipy.special
 import warnings
 import gc
 
@@ -77,21 +75,23 @@ class Chi2:
         """
         input a dataframe, column_name_1:str, column_name_2'str, and kind = 'joint_probability | 'frequency' (defaults to joint_probability)  
         returns a contingency table
-        BOTTOM AND LEFT COLUMNS CONTAINING MARGINAL VALUES  
+        BOTTOM AND LEFT COLUMNS CONTAINING MARGINAL VALUES
         """
         kind = 'joint_probability' if kind is None else kind
-        base_quantity_table=self.column_makeup(data,
-                                               x_1,
-                                               x_2)
-        value_col='pct_makeup' if kind=='joint_probability' else 'count'
-        contingency_table=base_quantity_table.pivot(index=x_1,columns=x_2,values=value_col).reset_index(drop=False)
-        del base_quantity_table
+        contingency_table = self.frequencies_table(
+            data,
+            x_1,
+            x_2,
+            kind=kind,
+        )
         contingency_table.columns.name=x_2
-        contingency_table['right_margin'.upper()]=contingency_table.iloc[:,1:].sum(axis=1)
-        contingency_table=pd.concat( [contingency_table, pd.Series(['bottom_margin'.upper()]+list(contingency_table.iloc[:,1:].sum(axis=0)),index=contingency_table.columns).to_frame().T   ]  )
-        contingency_table=contingency_table.set_index(contingency_table.columns[0])
-        contingency_table = contingency_table.fillna(0)
-        contingency_table = contingency_table.apply(pd.to_numeric, errors='coerce')
+        contingency_table['right_margin'.upper()]=contingency_table.sum(axis=1)
+        bottom_margin = contingency_table.sum(axis=0).to_frame().T
+        bottom_margin.index = pd.Index(
+            ['bottom_margin'.upper()],
+            name=contingency_table.index.name,
+        )
+        contingency_table=pd.concat([contingency_table, bottom_margin])
         if kind=='joint_probability': contingency_table = contingency_table.astype(float)
         else:  contingency_table = contingency_table.astype(int)
         return contingency_table
@@ -106,14 +106,15 @@ class Chi2:
         kind='frequency' for a frequency table
         """
         kind = 'joint_probability' if kind is None else kind
-        base_quantity_table=self.column_makeup(data,
-                                               x_1,
-                                               x_2)
-        value_col='pct_makeup' if kind=='joint_probability' else 'count'
-        frequencies_table=base_quantity_table.pivot(index=x_1,columns=x_2,values=value_col).reset_index(drop=False)
-        del base_quantity_table
-        frequencies_table=frequencies_table.set_index(frequencies_table.columns[0])
-        return frequencies_table
+        frequencies_table = (
+            data[[x_1, x_2]]
+            .groupby([x_1, x_2], observed=False)
+            .size()
+            .unstack(fill_value=0)
+        )
+        if kind == 'joint_probability':
+            return frequencies_table / frequencies_table.to_numpy().sum()
+        return frequencies_table.astype(int)
         
     ## consider adding a flag if any cell has an expected value <
     def chi_squared_independence(self,
@@ -134,36 +135,52 @@ class Chi2:
         test_data   =self._dropna_else_cat(data[[x_1,x_2]], 
                                             dropna=dropna) 
 
-        try:
-            observed = self.frequencies_table(test_data, 
-                                              x_1, 
-                                              x_2, 
-                                              kind='frequency')
-            expected = ( observed.sum(axis=1).to_numpy().reshape(-1,1)@observed.sum(axis=0).to_numpy().reshape(1,-1) ) / observed.sum().sum()
-            chi_stat = (( (observed-expected)**2)/expected).sum().sum()
-            dof      = (observed.shape[0]-1)*(observed.shape[1]-1)
-            p_value  = scipy.special.chdtrc(dof,chi_stat)
+        observed = self.frequencies_table(
+            test_data,
+            x_1,
+            x_2,
+            kind='frequency',
+        )
+
+        # Declared categorical levels with no observations do not belong in
+        # the statistical test, but remain available in frequencies_table().
+        observed = observed.loc[
+            observed.sum(axis=1) > 0,
+            observed.sum(axis=0) > 0,
+        ]
+
+        # An independence test is undefined without observations and at least
+        # two active levels in each variable.
+        if (
+            observed.empty
+            or observed.shape[0] < 2
+            or observed.shape[1] < 2
+        ):
             if check_assumptions==True:
-                assumption_met = self._chi2_assumptions_check(pd.DataFrame(expected),
-                                                                _series=False)
-                return p_value, assumption_met    
-            return p_value
-        except:
-            obs     =test_data.groupby([x_1,x_2],as_index=False,observed=False).size().rename(columns={'size':'observed'})
-            sums_x_1=test_data.groupby(x_1,as_index=False,observed=False).size().rename(columns={'size':'x_1_totals'})
-            sums_x_2=test_data.groupby(x_2,as_index=False,observed=False).size().rename(columns={'size':'x_2_totals'})
-            dof     = (sums_x_1.shape[0]-1)*(sums_x_2.shape[0]-1)
-            obs     =pd.merge(obs,sums_x_1,how='left',on=x_1)
-            obs     =pd.merge(obs,sums_x_2,how='left',on=x_2)
-            grand_total=obs['observed'].sum().sum()
-            obs['expected']=(obs['x_1_totals']*obs['x_2_totals'])/grand_total
-            chi_stat  =  (((obs['observed'] - obs['expected'])**2)  /  obs['expected']).sum().sum()
-            p_value  = scipy.special.chdtrc(dof,chi_stat)
-            if check_assumptions==True:
-                assumption_met = self._chi2_assumptions_check(obs['expected'],
-                                                                _series=True)
-                return p_value, assumption_met  
-            return p_value
+                return np.nan, False
+            return np.nan
+
+        observed_values = observed.to_numpy()
+        row_totals = observed_values.sum(axis=1)
+        column_totals = observed_values.sum(axis=0)
+        grand_total = observed_values.sum()
+        expected = np.outer(row_totals, column_totals) / grand_total
+        chi_stat = (((observed_values - expected)**2) / expected).sum()
+        dof = (observed.shape[0]-1)*(observed.shape[1]-1)
+        p_value = scipy.special.chdtrc(dof, chi_stat)
+
+        if check_assumptions==True:
+            expected = pd.DataFrame(
+                expected,
+                index=observed.index,
+                columns=observed.columns,
+            )
+            assumption_met = self._chi2_assumptions_check(
+                expected,
+                _series=False,
+            )
+            return p_value, assumption_met
+        return p_value
 
 
     def test_all_cat_columns_chi_independence(self,
@@ -565,7 +582,20 @@ class Chi2:
         """
         data = df[[supercat, subcat]].copy()
         # Most common mapping for each subcategory
-        mapping = data.groupby(subcat)[supercat].agg(lambda x: x.value_counts().idxmax()).sort_values(by=[supercat,subcat],ascending=[True,True]).reset_index(drop=True)
+        mapping = (
+            data.groupby(
+                subcat,
+                as_index=False,
+                observed=True,
+                dropna=False,
+            )[supercat]
+            .agg(lambda values: values.value_counts(dropna=False).idxmax())
+            .sort_values(
+                by=[supercat, subcat],
+                ascending=[True, True],
+            )
+            .reset_index(drop=True)
+        )
         return mapping
         
 

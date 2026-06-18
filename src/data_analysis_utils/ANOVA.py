@@ -532,7 +532,7 @@ class ANOVA:
         as per levene checks that happen before this is called
         if guesstimate is not False or None:
             rej_max_pct_in_group and/or max_num_outlier_all_reject can be passed as a dict in place of True for guesstimate
-            both need to be exceded for the result to output False
+            either can be exceded for the result to output False
             rej_max_pct_in_group is max percentage of reject in combos the given group is involved in. Such that the group can be in left or right column
             max_num_outlier_all_reject is the z score of number of reject counts given to any given group. all groups are included. including ones with zero rejects
             max_pct_reject_total is total pct of combinations that rejected
@@ -550,7 +550,7 @@ class ANOVA:
             alpha=0.05
         if guesstimate is None:
             guesstimate=False
-        if (guesstimate!=False):
+        if guesstimate!=False:
             default_guesstimate = {'rej_max_pct_in_group':0.2,'max_num_outlier_all_reject':3, 'max_pct_reject_total':0.2}
             if guesstimate==True:
                 guesstimate = default_guesstimate
@@ -584,72 +584,47 @@ class ANOVA:
                 delayed(compute)(i, j)
                 for i, j in combinations(keys, 2)
             )
-            if return_meta == True:
-                return pd.DataFrame(
-                                    results,
-                                    columns=[x_col + "_1", x_col + "_2", "ks_stat", "p_value"]  
-                                    )
-            base_df = pd.DataFrame(
-                                results,
-                                columns=[x_col + "_1", x_col + "_2", "ks_stat", "p_value"]  
-                                )
-            bool_df = (base_df['p_value'] < alpha)
-            if (guesstimate!=False):
-                total = base_df.shape[0]
-                sum_reject = bool_df.sum()
-                pct_reject = sum_reject/total  # based on number of combos
-                group_sizes = 2*total/len(keys)  # the group can be in left or right column
-                sums_df = pd.DataFrame(np.zeros(len(keys)),index=keys,columns=['totals'])
-                m1, m2 = base_df.loc[bool_df].groupby(x_col+"_1",as_index=True,observed=True).size().rename('count_1'), base_df.loc[bool_df].groupby(x_col+"_2",as_index=True,observed=True).size().rename('count_2')
-                sums_df = pd.merge(sums_df, m1, how='left',left_index=True, right_index=True)
-                sums_df = pd.merge(sums_df, m2, how='left',left_index=True, right_index=True).fillna(0)
-                # make sure NaNs have been filled
-                sums_df['totals'] = sums_df['count_1']+sums_df['count_2']
-                mu, q = sums_df['totals'].mean(), sums_df['totals'].std(ddof=0)
-                sums_df['z'] = (sums_df['totals']-mu) / q
-                sums_df['pct_of_group'] = sums_df['totals']/group_sizes
-                # where true is in the fail to meet assumption direction
-                sums_df['result'] = (sums_df['pct_of_group'] > rej_max_pct_in_group) | (sums_df['z'] > max_num_outlier_all_reject)
-
-                return (not ((sums_df['result']).any() or (pct_reject > max_pct_reject_total)))
-            return bool_df.any()
         except Exception as e:
-            warnings.warn(f'Problem encountered durring parallel computing of similarity scores for Kruskal-Wallis assumption checks: \n{e}. \nTrying n_jobs = -1.')
-            results = Parallel(n_jobs=3)(
+            warnings.warn(f'Problem encountered during parallel computing of similarity scores for Kruskal-Wallis assumption checks: \n{e}. \nTrying n_jobs = -1.')
+            results = Parallel(n_jobs=-1)(
                             delayed(compute)(i, j)
                             for i, j in combinations(keys, 2)
                         )
 
-            if return_meta == True:
-                return pd.DataFrame(
-                                    results,
-                                    columns=[x_col + "_1", x_col + "_2", "ks_stat", "p_value"]  
-                                    )
-            base_df = pd.DataFrame(
-                                results,
-                                columns=[x_col + "_1", x_col + "_2", "ks_stat", "p_value"]  
-                                )
-            bool_df = (base_df['p_value'] < alpha)
-            if (guesstimate!=False):
-                total = base_df.shape[0]
-                sum_reject = bool_df.sum()
-                pct_reject = sum_reject/total  # based on number of combos
-                group_sizes = 2*total/len(keys)  # the group can be in left or right column
-                sums_df = pd.DataFrame(np.zeros(len(keys)),index=keys,columns=['totals'])
-                m1, m2 = base_df.loc[bool_df].groupby(x_col+"_1",as_index=True,observed=True).size().rename('count_1'), base_df.loc[bool_df].groupby(x_col+"_2",as_index=True,observed=True).size().rename('count_2')
-                sums_df = pd.merge(sums_df, m1, how='left',left_index=True, right_index=True)
-                sums_df = pd.merge(sums_df, m2, how='left',left_index=True, right_index=True).fillna(0)
-                # make sure NaNs have been filled
-                sums_df['totals'] = sums_df['count_1']+sums_df['count_2']
-                mu, q = sums_df['totals'].mean(), sums_df['totals'].std(ddof=0)
-                sums_df['z'] = (sums_df['totals']-mu) / q
-                sums_df['pct_of_group'] = sums_df['totals']/group_sizes
-                # where true is in the fail to meet assumption direction
-                sums_df['result'] = (sums_df['pct_of_group'] > rej_max_pct_in_group) | (sums_df['z'] > max_num_outlier_all_reject)
-            
-                return (not ((sums_df['result']).any() or (pct_reject > max_pct_reject_total)))
-        
-            return bool_df.any()
+        base_df = pd.DataFrame(
+                            results,
+                            columns=[x_col + "_1", x_col + "_2", "ks_stat", "p_value"]
+                            )
+        if return_meta == True:
+            return base_df
+
+        pairwise_difference_detected = base_df['p_value'] < alpha
+        if guesstimate==False:
+            return not pairwise_difference_detected.any()
+
+        total = base_df.shape[0]
+        if total == 0:
+            return True
+
+        pct_reject = pairwise_difference_detected.sum()/total
+        group_sizes = 2*total/len(keys)  # the group can be in left or right column
+        sums_df = pd.DataFrame(np.zeros(len(keys)),index=keys,columns=['totals'])
+        rejected_pairs = base_df.loc[pairwise_difference_detected]
+        m1 = rejected_pairs.groupby(x_col+"_1",as_index=True,observed=True).size().rename('count_1')
+        m2 = rejected_pairs.groupby(x_col+"_2",as_index=True,observed=True).size().rename('count_2')
+        sums_df = pd.merge(sums_df, m1, how='left',left_index=True, right_index=True)
+        sums_df = pd.merge(sums_df, m2, how='left',left_index=True, right_index=True).fillna(0)
+        sums_df['totals'] = sums_df['count_1']+sums_df['count_2']
+        mu, q = sums_df['totals'].mean(), sums_df['totals'].std(ddof=0)
+        if q == 0:
+            sums_df['z'] = 0.0
+        else:
+            sums_df['z'] = (sums_df['totals']-mu) / q
+        sums_df['pct_of_group'] = sums_df['totals']/group_sizes
+        # True means this group exceeds a configured failure threshold.
+        sums_df['result'] = (sums_df['pct_of_group'] > rej_max_pct_in_group) | (sums_df['z'] > max_num_outlier_all_reject)
+
+        return not (sums_df['result'].any() or (pct_reject > max_pct_reject_total))
 
     def _kruskal_assumptions_strict(self,
                         group, 
@@ -726,7 +701,7 @@ class ANOVA:
             return False
         
         # --- 2. shape similarity (pairwise KS) ---
-        is_sim = self._ks_pairwise_parallel(df[['group','y']], 
+        shape_assumption_met = self._ks_pairwise_parallel(df[['group','y']],
                             'group', 
                             'y', 
                             n_jobs=n_jobs,
@@ -741,7 +716,7 @@ class ANOVA:
                 g2 = groups[j]
                 _, p = scipy.stats.ks_2samp(g1, g2)
         """
-        if is_sim==False:
+        if not shape_assumption_met:
             if return_pseudo==True:
                 return self._kruskal_assumptions_pseudo(df['y'],
                                                             dropna=dropna,
@@ -843,12 +818,16 @@ class ANOVA:
             'ks_pairwise': ks_df,
             'kruskal': {'stat': kw_stat, 'p': kw_p}
         }
-        if jupyter_output==True:            
-                print(f"x={group.name}, y={y.name}")
-                print('kruskal: ',meta_dict['kruskal'])
-                print('levene: ',meta_dict['levene'])
-                display(round(meta_dict['summary'],6))
-                display(round(meta_dict['ks_pairwise'],6))
+        if jupyter_output==True:
+            try:
+                from IPython.display import display as notebook_display
+            except ImportError:
+                notebook_display = print
+            print(f"x={group.name}, y={y.name}")
+            print('kruskal: ',meta_dict['kruskal'])
+            print('levene: ',meta_dict['levene'])
+            notebook_display(round(meta_dict['summary'],6))
+            notebook_display(round(meta_dict['ks_pairwise'],6))
         return meta_dict
     
     def kruskal_wallis_assumptions(self,
@@ -926,10 +905,14 @@ class ANOVA:
                                             ks_alpha=ks_alpha,
                                             dropna=dropna,
                                             return_pseudo=return_pseudo,
-                                            pseudo_test_max_global_ties_ratio=pseudo_test_max_global_ties_ratio)
+                                            pseudo_test_max_global_ties_ratio=pseudo_test_max_global_ties_ratio,
+                                            guesstimate=guesstimate,
+                                            n_jobs=n_jobs)
         return self._kruskal_assumptions_meta(group, 
                                                         y,
                                                         dropna=dropna,
+                                                        guesstimate=guesstimate,
+                                                        n_jobs=n_jobs,
                                                         jupyter_output = jupyter_output)
     
 
@@ -1374,21 +1357,13 @@ class ANOVA:
         else:
             data = data.dropna()
 
-        #assign ranks
-        data['rank']=data[y].rank(method='average')
-        #   where ni is each group size
-        # and Ri is sum of ranks for group i
-        grouped_data=data.groupby(x,observed=True)['rank'].agg(['sum','size'])
-        #where k is number of groups and N is total observations
-        k=grouped_data.shape[0]
-        N=data.shape[0]
-        if (N<2) or (k<2):
+        groups = [
+            group.to_numpy()
+            for _, group in data.groupby(x, observed=True)[y]
+        ]
+        if len(groups) < 2 or data[y].nunique() < 2:
             return np.nan
-        #print(f"(12/(N*(N+1))): {(12/(N*(N+1)))}, ((grouped_data['sum']**2)/grouped_data['size']) {((grouped_data['sum']**2)/grouped_data['size'])}, (3*(N+1)) {(3*(N+1))}, np.sum(  ((grouped_data['sum']**2)/grouped_data['size']) - (3*(N+1))  ) {(  np.sum((grouped_data['sum']**2)/grouped_data['size']) - (3*(N+1))  )}")
-        h_statistic =  (12/(N*(N+1)))   *  np.sum(  ((grouped_data['sum']**2)/grouped_data['size'])) - (3*(N+1))  
-        dof = k-1
-        p_value = scipy.stats.chi2.sf(h_statistic, dof)
-        return p_value
+        return scipy.stats.kruskal(*groups).pvalue
     
     def test_all_num_cat_kruskal_wallis(self,
                                         data:pd.DataFrame, 
@@ -1454,18 +1429,21 @@ class ANOVA:
             res_dict['numeric'].append(combo[1])
             res_dict['P-value'].append(p)
             if check_assumptions==True:
-                kruskal_assumptions_met = self.kruskal_wallis_assumptions(data[combo[0]], 
-                                                                    data[combo[1]], 
-                                                                    levene_alpha=levene_alpha,
-                                                                    ks_alpha=ks_alpha,
-                                                                    dropna=dropna,
-                                                                    retrieve_meta=False,
-                                                                    return_pseudo=return_pseudo,
-                                                                    pseudo_test_max_global_ties_ratio=pseudo_test_max_global_ties_ratio,
-                                                                    full_pseudo=full_pseudo,
-                                                                    jupyter_output=False,
-                                                                    guesstimate=guesstimate,
-                                                                    n_jobs=n_jobs)
+                if not np.isfinite(p):
+                    kruskal_assumptions_met = False
+                else:
+                    kruskal_assumptions_met = self.kruskal_wallis_assumptions(data[combo[0]],
+                                                                        data[combo[1]],
+                                                                        levene_alpha=levene_alpha,
+                                                                        ks_alpha=ks_alpha,
+                                                                        dropna=dropna,
+                                                                        retrieve_meta=False,
+                                                                        return_pseudo=return_pseudo,
+                                                                        pseudo_test_max_global_ties_ratio=pseudo_test_max_global_ties_ratio,
+                                                                        full_pseudo=full_pseudo,
+                                                                        jupyter_output=False,
+                                                                        guesstimate=guesstimate,
+                                                                        n_jobs=n_jobs)
                 res_dict['assumptions_met'].append(kruskal_assumptions_met)
         res = pd.DataFrame(res_dict)
         res = res[[i for i in ['category','numeric','P-value','assumptions_met'] if i in res.columns]]
@@ -1532,57 +1510,85 @@ class ANOVA:
     # ========================================================================================================================================================================= 
     # two sample t_tests
     def two_sample_t_tests(self,
-                           data:pd.DataFrame):
+                           data:pd.DataFrame,
+                           include_invalid:bool=False):
 
         """
         where data columns[ 0 , 1 ] should be [ x_feature=category , y_target=numeric ]
         Default is "welch's" t_test because it is robust to unequal varaince and unequal sample sizes
 
+        By default, comparisons involving a group with fewer than two non-null
+        observations or zero/undefined variance are omitted. Set
+        include_invalid=True to retain those comparisons with a NaN P-value.
         """
 
         cols=data.columns
         cat=cols[0]
         num=cols[1]
-        df1=data.groupby(cat,as_index=False,observed=True)[num].agg(['mean','std','size'])
-        nandf=df1.loc[(df1['size'] <= 1) & (df1['std'] <= 0)]
-        nandf['subcat_1'],nandf['subcat_2'],nandf['P-value'],nandf['n_samples_1'],nandf['n_samples_2'] = nandf[cat], np.nan, np.nan, nandf['size'], np.nan
-        nandf=nandf[['subcat_1','subcat_2','P-value','n_samples_1','n_samples_2']]
-        df1 = df1.loc[(df1['size'] > 1) & (df1['std'] > 0)]
-        df1=df1.reset_index(drop=True)
-        combos = list(itertools.combinations(df1[cat].unique(), 2)) 
+        df1=data.groupby(cat,as_index=False,observed=True)[num].agg(['mean','std','count'])
+        if df1.shape[0] < 2:
+            count_dtype = 'Int64' if include_invalid else int
+            return pd.DataFrame(
+                {
+                    'subcat_1': pd.Series(dtype=df1[cat].dtype),
+                    'subcat_2': pd.Series(dtype=df1[cat].dtype),
+                    'P-value': pd.Series(dtype=float),
+                    'n_samples_1': pd.Series(dtype=count_dtype),
+                    'n_samples_2': pd.Series(dtype=count_dtype),
+                }
+            )
+
+        combos = list(itertools.combinations(df1[cat].unique(), 2))
         merged=pd.DataFrame(combos,columns=['subcat_1','subcat_2'])
         merged=merged.merge(df1,how='left',right_on=cat,left_on='subcat_1')
         merged=merged.merge(df1,how='left',right_on=cat,left_on='subcat_2',suffixes=('1','2'))
-        merged['std1']=merged['std1']**2
-        merged['std2']=merged['std2']**2
-        merged['t_score']= (merged['mean1']-merged['mean2']) /  np.sqrt( (merged['std1']/merged['size1'])+(merged['std2']/merged['size2']) )
-        merged['dof']= ( (merged['std1']/merged['size1'])+(merged['std2']/merged['size2']) )**2 / ( ((merged['std1']/merged['size1'])**2 / (merged['size1']-1)) +((merged['std2']/merged['size2'])**2 / (merged['size2']-1)) )
-        merged['P-value'] = 2 * scipy.stats.t.sf( np.abs(merged['t_score']),  merged['dof']  )
-        merged=merged.rename(columns={'size1':'n_samples_1','size2':'n_samples_2'})
-        merged=pd.concat([merged[['subcat_1','subcat_2','P-value','n_samples_1','n_samples_2']],nandf])
-        merged['n_samples_2']=merged['n_samples_2'].astype(int)
+        merged=merged.rename(columns={'count1':'n_samples_1','count2':'n_samples_2'})
+
+        valid = (
+            (merged['n_samples_1'] > 1)
+            & (merged['n_samples_2'] > 1)
+            & np.isfinite(merged['std1'])
+            & np.isfinite(merged['std2'])
+            & (merged['std1'] > 0)
+            & (merged['std2'] > 0)
+        )
+        merged['P-value'] = np.nan
+        if valid.any():
+            merged.loc[valid,'P-value'] = scipy.stats.ttest_ind_from_stats(
+                mean1=merged.loc[valid,'mean1'],
+                std1=merged.loc[valid,'std1'],
+                nobs1=merged.loc[valid,'n_samples_1'],
+                mean2=merged.loc[valid,'mean2'],
+                std2=merged.loc[valid,'std2'],
+                nobs2=merged.loc[valid,'n_samples_2'],
+                equal_var=False,
+            ).pvalue
+
+        if not include_invalid:
+            merged=merged.loc[valid]
+
+        merged=merged[['subcat_1','subcat_2','P-value','n_samples_1','n_samples_2']].reset_index(drop=True)
+        count_dtype = 'Int64' if include_invalid else int
+        merged['n_samples_1']=merged['n_samples_1'].astype(count_dtype)
+        merged['n_samples_2']=merged['n_samples_2'].astype(count_dtype)
         return merged
 
     def subcategory_similarities(self,
                                  catx_numy_df:pd.DataFrame,
                                  alpha:None|float=None,
                                  return_similar:None|bool=None,
-                                 min_observations:None|int=None):
+                                 min_observations:None|int=None,
+                                 include_invalid:bool=False):
         """
         where catx_numy_df is a pd.DataFrame with categoric x feature and numeric y target
         calls two_sample_t_tests and can filter based on p_value and/or sample size according to parameters
         """
         alpha = 0.05 if alpha is None else alpha
         return_similar = False if return_similar is None else return_similar
-        data=self.two_sample_t_tests(catx_numy_df)
+        data=self.two_sample_t_tests(catx_numy_df,include_invalid=include_invalid)
         if return_similar==False:
             data=data.loc[data['P-value']<alpha]
         if min_observations is not None:
             data=data.loc[(data['n_samples_1']>min_observations)&(data['n_samples_2']>min_observations)]
         data=data.reset_index(drop=True)
         return data
-
-
-
-
-
